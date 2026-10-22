@@ -24,13 +24,15 @@ export function writeCorpusS3dGeometryCopy(
   const boardHolesChanges = workingCopy.boardHolesChanges;
   const roomChange = workingCopy.roomChange;
   const elementIdentityChanges = workingCopy.elementIdentityChanges;
-  if (!changes.length && !boardChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length) return xml;
+  const elementVariableChanges = workingCopy.elementVariableChanges;
+  if (!changes.length && !boardChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length && !elementVariableChanges.length) return xml;
 
   const byPath = new Map(changes.map((change) => [change.path.join("."), change.after]));
   const boardsByPath = new Map(boardChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
   const boardAppearanceByPath = new Map(boardAppearanceChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
   const boardHolesByPath = new Map(boardHolesChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
   const identitiesByPath = new Map(elementIdentityChanges.map((change) => [change.path.join("."), change.after]));
+  const variablesByPath = new Map(elementVariableChanges.map((change) => [change.path.join("."), change]));
   const tags = scanXmlTags(xml);
   const replacements: Array<{ start: number; end: number; value: string }> = [];
   const foundPaths = new Set<string>();
@@ -38,6 +40,7 @@ export function writeCorpusS3dGeometryCopy(
   const foundBoardAppearancePaths = new Set<string>();
   const foundBoardHolesPaths = new Set<string>();
   const foundIdentityPaths = new Set<string>();
+  const foundVariablePaths = new Set<string>();
   const stack: Array<{ tag: "ELEMENT" | "ELM"; path: number[]; nextChild: number; nextBoard: number }> = [];
   let nextRoot = 0;
   let roomFound = false;
@@ -70,6 +73,17 @@ export function writeCorpusS3dGeometryCopy(
       ROOM_ATTRIBUTE_KEYS.forEach((key, index) => { value = setXmlAttribute(value, key, formatS3dNumber(roomValues[index]!)); });
       replacements.push({ start: token.start, end: token.end, value });
       roomFound = true;
+      continue;
+    }
+    if (token.name === "EVAR") {
+      const parent = stack.at(-1);
+      if (!parent) continue;
+      const path = parent.path.join(".");
+      const change = variablesByPath.get(path);
+      if (change) {
+        replacements.push({ start: token.start, end: token.end, value: replaceExistingElementVariables(token.raw, change.before, change.after, path) });
+        foundVariablePaths.add(path);
+      }
       continue;
     }
     if (token.name === "AD") {
@@ -167,6 +181,9 @@ export function writeCorpusS3dGeometryCopy(
   for (const path of identitiesByPath.keys()) {
     if (!foundIdentityPaths.has(path)) throw new Error(`Identitet izmijenjenog elementa ${path} nije pronađen u izvornom S3D dokumentu.`);
   }
+  for (const path of variablesByPath.keys()) {
+    if (!foundVariablePaths.has(path)) throw new Error(`EVAR sekcija izmijenjenog elementa ${path} nije pronađena u izvornom dokumentu.`);
+  }
   if (roomChange && !roomFound) throw new Error("SOBA sekcija nije pronađena u izvornom S3D dokumentu.");
 
   let output = xml;
@@ -218,6 +235,60 @@ export interface CorpusEdgeBandingSpec {
   sides: readonly [boolean, boolean, boolean, boolean];
 }
 
+/**
+ * Zamjenjuje direktni EVAR blok izabranog E3D elementa. VAR atributi se
+ * numerišu neprekinuto od nule, kao u potvrđenim Corpus artefaktima, dok svi
+ * ostali atributi i okolni XML ostaju netaknuti. Dvosmislena postojeća imena
+ * se ne prepisuju.
+ */
+export function replaceCorpusE3dElementVariables(
+  xml: string,
+  elementPath: readonly number[],
+  variables: Readonly<Record<string, string>>,
+): string {
+  if (!elementPath.length || !elementPath.every((part) => Number.isInteger(part) && part >= 0)) {
+    throw new Error("Putanja E3D elementa nije ispravna.");
+  }
+  validateVariableEntries(variables);
+  const targetKey = elementPath.join(".");
+  const tags = scanXmlTags(xml);
+  const stack: Array<{ tag: "ELEMENT" | "ELM"; path: number[]; nextChild: number }> = [];
+  let nextRoot = 0;
+  let targetOpening: XmlTagToken | null = null;
+  let targetEvar: XmlTagToken | null = null;
+
+  for (const token of tags) {
+    if (token.closing) {
+      if ((token.name === "ELEMENT" || token.name === "ELM") && stack.at(-1)?.tag === token.name) stack.pop();
+      continue;
+    }
+    if (token.name === "EVAR" && stack.at(-1)?.path.join(".") === targetKey) {
+      if (targetEvar) throw new Error(`Element ${targetKey} ima više direktnih EVAR blokova.`);
+      targetEvar = token;
+      continue;
+    }
+    if (token.name !== "ELEMENT" && token.name !== "ELM") continue;
+    let path: number[];
+    if (token.name === "ELEMENT") path = [nextRoot++];
+    else {
+      const parent = stack.at(-1);
+      if (!parent) throw new Error("E3D sadrži ELM bez roditeljskog ELEMENT/ELM čvora.");
+      path = [...parent.path, parent.nextChild++];
+    }
+    if (path.join(".") === targetKey) targetOpening = token;
+    if (!token.selfClosing) stack.push({ tag: token.name, path, nextChild: 0 });
+  }
+  if (!targetOpening) throw new Error(`E3D element ${targetKey} nije pronađen.`);
+
+  const serialized = serializeElementVariables(variables, targetEvar?.raw);
+  if (targetEvar) return xml.slice(0, targetEvar.start) + serialized + xml.slice(targetEvar.end);
+  if (targetOpening.selfClosing) throw new Error(`E3D element ${targetKey} nema sadržaj u koji se može dodati EVAR.`);
+  const afterOpening = xml.slice(targetOpening.end);
+  const leading = /^(\r?\n)([ \t]*)/.exec(afterOpening);
+  const insertion = leading ? `${leading[1]}${leading[2]}${serialized}` : serialized;
+  return xml.slice(0, targetOpening.end) + insertion + xml.slice(targetOpening.end);
+}
+
 /** Izdvaja jedan izvorni korijenski S3D element u samostalni E3D omotač. */
 export function createCorpusE3dSourceFromS3d(xml: string, rootIndex: number): string {
   if (!Number.isInteger(rootIndex) || rootIndex < 0) throw new Error("Indeks korijenskog elementa nije ispravan.");
@@ -253,6 +324,57 @@ export function duplicateCorpusE3dBoard(xml: string, boardIndex: number, name: s
     + xml.slice(container.end, board.end) + insertion + xml.slice(board.end);
 }
 
+export type CorpusBoardCopySpec = {
+  name: string;
+  position: readonly [number, number, number];
+};
+
+export type CorpusIndexedBoardCopySpec = CorpusBoardCopySpec & { boardIndex: number };
+
+/**
+ * Pravi ograničen niz cijelih AD fragmenata kao jednu strukturnu izmjenu.
+ * Mijenja samo DNAME i tri pozicijska atributa svake kopije, pa kontura,
+ * rupe, rubovi i nepoznate obrade ostaju bajt-po-bajt isti kao u izvoru.
+ */
+export function duplicateCorpusE3dBoardCopies(xml: string, boardIndex: number, copies: readonly CorpusBoardCopySpec[]): string {
+  if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
+  if (!copies.length || copies.length > 50) throw new Error("Niz ploča mora sadržati od 1 do 50 kopija.");
+  if (copies.some((copy) => !copy.name.trim() || copy.position.length !== 3 || copy.position.some((value) => !Number.isFinite(value)))) {
+    throw new Error("Svaka kopija ploče mora imati naziv i tri konačne koordinate.");
+  }
+  const { container, boards } = findRootBoardFragments(xml);
+  const board = boards[boardIndex];
+  if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena u E3D elementu.`);
+  const fragment = xml.slice(board.start, board.end);
+  const opening = scanXmlTags(fragment).find((token) => !token.closing && token.name === "AD");
+  if (!opening) throw new Error(`Početak ploče ${boardIndex} nije pronađen.`);
+  const newline = xml.includes("\r\n") ? "\r\n" : "\n";
+  const lineStart = xml.lastIndexOf("\n", board.start - 1) + 1;
+  const indent = xml.slice(lineStart, board.start).match(/^\s*/)?.[0] ?? "";
+  const insertion = copies.map((copy) => {
+    let nextOpening = setXmlAttribute(opening.raw, "DNAME", escapeXmlAttribute(copy.name.trim()));
+    nextOpening = setXmlAttribute(nextOpening, "DXPOS", formatS3dNumber(copy.position[0]));
+    nextOpening = setXmlAttribute(nextOpening, "DYPOS", formatS3dNumber(copy.position[1]));
+    nextOpening = setXmlAttribute(nextOpening, "DZPOS", formatS3dNumber(copy.position[2]));
+    return `${newline}${indent}${nextOpening}${fragment.slice(opening.end)}`;
+  }).join("");
+  const updatedContainer = setXmlAttribute(container.raw, "DCOUNT", String(boards.length + copies.length));
+  return xml.slice(0, container.start) + updatedContainer
+    + xml.slice(container.end, board.end) + insertion + xml.slice(board.end);
+}
+
+/** Kopira više različitih AD fragmenata; obrada unazad čuva izvorne indekse. */
+export function duplicateCorpusE3dBoards(xml: string, copies: readonly CorpusIndexedBoardCopySpec[]): string {
+  if (!copies.length || copies.length > 50) throw new Error("Grupno kopiranje mora sadržati od 1 do 50 ploča.");
+  if (copies.some((copy) => !Number.isInteger(copy.boardIndex) || copy.boardIndex < 0)) throw new Error("Indeks ploče za grupno kopiranje nije ispravan.");
+  if (new Set(copies.map((copy) => copy.boardIndex)).size !== copies.length) throw new Error("Svaka izvorna ploča može se grupno kopirati samo jednom.");
+  const boardCount = findRootBoardFragments(xml).boards.length;
+  if (copies.some((copy) => copy.boardIndex >= boardCount)) throw new Error("Izabrana ploča za grupno kopiranje nije pronađena.");
+  return [...copies]
+    .sort((left, right) => right.boardIndex - left.boardIndex)
+    .reduce((current, copy) => duplicateCorpusE3dBoardCopies(current, copy.boardIndex, [copy]), xml);
+}
+
 /** Uklanja direktnu ploču korijenskog E3D elementa i čuva ostatak XML-a bajt-po-bajt. */
 export function removeCorpusE3dBoard(xml: string, boardIndex: number): string {
   if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
@@ -266,6 +388,35 @@ export function removeCorpusE3dBoard(xml: string, boardIndex: number): string {
   if (previousNewline >= container.end && xml.slice(previousNewline + 1, board.start).trim() === "") removalStart = previousNewline;
   return xml.slice(0, container.start) + updatedContainer
     + xml.slice(container.end, removalStart) + xml.slice(board.end);
+}
+
+/** Uklanja više cijelih AD fragmenata unazad i uvijek zadržava najmanje jednu ploču. */
+export function removeCorpusE3dBoards(xml: string, boardIndexes: readonly number[]): string {
+  const indexes = [...new Set(boardIndexes)].sort((left, right) => right - left);
+  if (!indexes.length) throw new Error("Nije označena nijedna ploča za uklanjanje.");
+  if (indexes.some((index) => !Number.isInteger(index) || index < 0)) throw new Error("Indeks ploče za grupno uklanjanje nije ispravan.");
+  const boardCount = findRootBoardFragments(xml).boards.length;
+  if (indexes.some((index) => index >= boardCount)) throw new Error("Izabrana ploča za grupno uklanjanje nije pronađena.");
+  if (indexes.length >= boardCount) throw new Error("Element mora zadržati najmanje jednu ploču.");
+  return indexes.reduce((current, index) => removeCorpusE3dBoard(current, index), xml);
+}
+
+/**
+ * Pomjera cijeli direktni AD fragment na novu poziciju bez ponovne
+ * serijalizacije. Redoslijed je semantičan jer Corpus makroi mogu koristiti
+ * indeksirane OBJ1/OBJ2 reference.
+ */
+export function moveCorpusE3dBoard(xml: string, fromIndex: number, toIndex: number): string {
+  const { boards, closing } = findRootBoardFragments(xml);
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || toIndex < 0 || fromIndex >= boards.length || toIndex >= boards.length) {
+    throw new Error("Početna ili ciljna pozicija ploče nije ispravna.");
+  }
+  if (fromIndex === toIndex) return xml;
+  if (!closing || !boards.length) throw new Error("DASKE sekcija nema ploče koje se mogu premjestiti.");
+  const units = boards.map((board, index) => xml.slice(board.start, boards[index + 1]?.start ?? closing.start));
+  const [moved] = units.splice(fromIndex, 1);
+  units.splice(toIndex, 0, moved!);
+  return xml.slice(0, boards[0]!.start) + units.join("") + xml.slice(closing.start);
 }
 
 /** Mijenja samo DNAME izabrane direktne ploče korijenskog E3D elementa. */
@@ -633,6 +784,71 @@ function setXmlAttribute(tag: string, name: string, value: string): string {
   if (pattern.test(tag)) return tag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`);
   const insertion = tag.match(/\/\s*>$/)?.index ?? tag.lastIndexOf(">");
   return `${tag.slice(0, insertion)} ${name}="${value}"${tag.slice(insertion)}`;
+}
+
+function replaceExistingElementVariables(
+  tag: string,
+  before: Readonly<Record<string, string>>,
+  after: Readonly<Record<string, string>>,
+  path: string,
+): string {
+  const beforeNames = Object.keys(before).sort();
+  const afterNames = Object.keys(after).sort();
+  if (JSON.stringify(beforeNames) !== JSON.stringify(afterNames)) {
+    throw new Error(`EVAR ${path} smije mijenjati samo vrijednosti postojećih varijabli.`);
+  }
+  const attributes = [...tag.matchAll(/\s(VAR\d+)\s*=\s*(["'])(.*?)\2/gi)].map((match) => {
+    const assignment = decodeXmlAttribute(match[3] ?? "");
+    const separator = assignment.indexOf("=");
+    return { attribute: match[1]!, name: separator < 0 ? assignment : assignment.slice(0, separator), value: separator < 0 ? "" : assignment.slice(separator + 1) };
+  });
+  let output = tag;
+  for (const name of beforeNames) {
+    const matches = attributes.filter((attribute) => attribute.name === name);
+    if (matches.length !== 1 || matches[0]!.value !== before[name]) {
+      throw new Error(`Postojeća EVAR varijabla ${name} elementa ${path} nije jednoznačno pronađena u izvornom dokumentu.`);
+    }
+    output = setXmlAttribute(output, matches[0]!.attribute, escapeXmlAttribute(`${name}=${after[name]}`));
+  }
+  return output;
+}
+
+function serializeElementVariables(variables: Readonly<Record<string, string>>, existingTag?: string): string {
+  if (existingTag) {
+    const existing = [...existingTag.matchAll(/\s(VAR\d+)\s*=\s*(["'])(.*?)\2/gi)];
+    const names = existing.map((match) => {
+      const assignment = decodeXmlAttribute(match[3] ?? "");
+      const separator = assignment.indexOf("=");
+      return separator < 0 ? assignment : assignment.slice(0, separator);
+    });
+    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+    if (duplicate) throw new Error(`Postojeća EVAR varijabla ${duplicate} nije jednoznačna.`);
+  }
+  let tag = existingTag?.replace(/\s+VAR\d+\s*=\s*(["'])(.*?)\1/gi, "") ?? "<EVAR/>";
+  Object.entries(variables).forEach(([name, expression], index) => {
+    tag = setXmlAttribute(tag, `VAR${index}`, escapeXmlAttribute(`${name}=${expression}`));
+  });
+  return tag;
+}
+
+function validateVariableEntries(variables: Readonly<Record<string, string>>): void {
+  const names = Object.keys(variables);
+  if (names.some((name) => !name.trim() || name !== name.trim() || name.includes("="))) {
+    throw new Error("Naziv EVAR varijable ne smije biti prazan, imati rubne razmake niti sadržati znak =.");
+  }
+  const normalized = names.map((name) => name.toUpperCase());
+  if (new Set(normalized).size !== normalized.length) throw new Error("Nazivi EVAR varijabli moraju biti jednoznačni bez obzira na velika i mala slova.");
+}
+
+function decodeXmlAttribute(value: string): string {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_match, digits: string) => String.fromCodePoint(Number.parseInt(digits, 16)))
+    .replace(/&#(\d+);/g, (_match, digits: string) => String.fromCodePoint(Number.parseInt(digits, 10)))
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
 }
 
 function formatS3dNumber(value: number): string {

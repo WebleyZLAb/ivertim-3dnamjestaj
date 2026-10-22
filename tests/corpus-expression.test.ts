@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  analyzeCorpusAssignments,
+  corpusExpressionDependencies,
   evaluateCorpusAssignments,
   evaluateCorpusExpression,
   isCorpusExpressionSyntaxSupported,
@@ -43,4 +45,36 @@ test("rješava lanac zavisnih dodjela i zadržava cikluse kao neriješene", () =
   assert.equal(result.values.C, 30);
   assert.equal(result.values.IZABRANO, true);
   assert.deepEqual(result.unresolved.map(({ name }) => name), ["X", "Y"]);
+});
+
+test("objašnjava razriješene, nedostajuće, ciklične i nepodržane dodjele", () => {
+  const analysis = analyzeCorpusAssignments([
+    { name: "B", expression: "A+5" },
+    { name: "C", expression: "B*2" },
+    { name: "NEDOSTAJE", expression: "SPOLJNA+1" },
+    { name: "X", expression: "Y+1" },
+    { name: "Y", expression: "X+1" },
+    { name: "LOŠA", expression: "UNKNOWN_FN(1)" },
+    { name: "NULA", expression: "10/0" },
+  ], { A: 10 });
+
+  assert.deepEqual(analysis.map(({ name, status, value }) => ({ name, status, value })), [
+    { name: "B", status: "resolved", value: 15 },
+    { name: "C", status: "resolved", value: 30 },
+    { name: "NEDOSTAJE", status: "missing", value: null },
+    { name: "X", status: "cycle", value: null },
+    { name: "Y", status: "cycle", value: null },
+    { name: "LOŠA", status: "invalid", value: null },
+    { name: "NULA", status: "unresolved", value: null },
+  ]);
+  assert.deepEqual(analysis[2]!.missing, ["SPOLJNA"]);
+  assert.deepEqual(corpusExpressionDependencies("IF(A>0;MAX(B;C);D)"), ["A", "B", "C", "D"]);
+  assert.equal(corpusExpressionDependencies("A ? B : C"), null);
+});
+
+test("kratko grananje može razriješiti izraz iako neaktivna grana ima nepoznatu varijablu", () => {
+  const [analysis] = analyzeCorpusAssignments([{ name: "A", expression: "IF(FALSE;NEPOZNATO;7)" }]);
+  assert.equal(analysis!.status, "resolved");
+  assert.equal(analysis!.value, 7);
+  assert.deepEqual(analysis!.dependencies, ["NEPOZNATO"]);
 });

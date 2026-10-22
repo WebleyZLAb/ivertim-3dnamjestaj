@@ -25,7 +25,7 @@ export interface CorpusCmkSimulation {
 }
 
 const OPERATION_SECTION = /^(RASTER|PILA|POTROSNI|MAKRO|GRUPA)\d+$/;
-const TEXT_FIELD_KEYS = new Set(["GN", "NAME", "//"]);
+const TEXT_FIELD_KEYS = new Set(["GN", "NAME", "PMU", "//"]);
 
 /**
  * Simulira samo ograničenu aritmetiku CMK-a. Ne izvršava skripte, ne dodaje
@@ -64,7 +64,12 @@ export function corpusMacroBoardContext(
   if (object1) addBoardValues(values, "OBJ1", object1);
   if (object2) addBoardValues(values, "OBJ2", object2);
   const variableAssignments = Object.entries(element.variables).map(([name, expression]) => ({ name, expression }));
-  return evaluateCorpusAssignments(variableAssignments, values).values;
+  const resolved = { ...evaluateCorpusAssignments(variableAssignments, values).values };
+  for (const name of Object.keys(element.variables)) {
+    const value = resolved[name.toUpperCase()];
+    if (value !== undefined) resolved[`EVAR.${name.toUpperCase()}`] = value;
+  }
+  return resolved;
 }
 
 function addElementValues(values: Record<string, CorpusExpressionValue>, element: CorpusS3dElement) {

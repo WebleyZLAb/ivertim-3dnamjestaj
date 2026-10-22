@@ -4,46 +4,84 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { CorpusS3dBoard, CorpusS3dElement, CorpusS3dRoom } from "../lib/corpus-s3d";
 import { corpusBoardDimensions, corpusHolePosition, corpusRoomTotalHeight, evaluateCorpusFormula, expandCorpusCurve } from "../lib/corpus-geometry";
 import { resolveCorpusMainFaceHoles } from "../lib/corpus-hole-geometry";
+import { corpusGroupBounds } from "../lib/corpus-group";
 
 type Room3DViewProps = {
   elements: readonly CorpusS3dElement[];
   room: CorpusS3dRoom;
   selected: CorpusS3dElement | null;
   selectedBoardIndex: number | null;
+  boardGroupSelection: readonly number[];
+  groupElements: readonly CorpusS3dElement[];
+  outsideRoomElements: readonly CorpusS3dElement[];
+  overlappingElements: readonly CorpusS3dElement[];
+  materialTextures: ReadonlyMap<string, { file: File; name: string; textureSize: readonly [number | null, number | null, number | null] }>;
   onSelect(element: CorpusS3dElement): void;
-  onSelectBoard(element: CorpusS3dElement, boardIndex: number): void;
+  onClearSelection(): void;
+  onToggleGroup(element: CorpusS3dElement): void;
   onMove(element: CorpusS3dElement, position: readonly [number, number, number]): void;
+  onMoveGroup(delta: readonly [number, number, number]): boolean;
   onOpenData(): void;
 };
 
-export function Room3DView({ elements, room, selected, selectedBoardIndex, onSelect, onSelectBoard, onMove, onOpenData }: Room3DViewProps) {
+type RetainedCameraState = { position: [number, number, number]; target: [number, number, number] };
+let retainedRoomCamera: RetainedCameraState | null = null;
+
+export function Room3DView({ elements, room, selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData }: Room3DViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const restoredCameraRef = useRef(false);
+  const lastElementClickRef = useRef<{ element: CorpusS3dElement; time: number } | null>(null);
   const [showEnvelopes, setShowEnvelopes] = useState(true);
   const [showHoles, setShowHoles] = useState(true);
+  const [showProblems, setShowProblems] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
+  const [snapStep, setSnapStep] = useState<1 | 10 | 50>(10);
   const [viewRevision, setViewRevision] = useState(0);
-  const [cameraView, setCameraView] = useState<"home" | "front" | "side" | "top">("home");
+  const [cameraView, setCameraView] = useState<"home" | "front" | "side" | "top" | "selection">("home");
   const [moveMode, setMoveMode] = useState(false);
   const selectedRef = useRef(selected);
   const selectedBoardRef = useRef(selectedBoardIndex);
+  const boardGroupSelectionRef = useRef(new Set(boardGroupSelection));
+  const groupElementsRef = useRef(new Set(groupElements));
+  const outsideRoomRef = useRef(new Set(outsideRoomElements));
+  const overlappingRef = useRef(new Set(overlappingElements));
+  const groupEnvelopeRef = useRef<THREE.LineSegments | null>(null);
+  const orientationAxesRef = useRef<THREE.AxesHelper | null>(null);
   const visualRefs = useRef(new Map<CorpusS3dElement, {
     materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }>;
-    envelope: THREE.LineBasicMaterial;
+    envelope: THREE.LineSegments;
   }>());
   selectedRef.current = selected;
   selectedBoardRef.current = selectedBoardIndex;
+  boardGroupSelectionRef.current = new Set(boardGroupSelection);
+  groupElementsRef.current = new Set(groupElements);
+  outsideRoomRef.current = new Set(outsideRoomElements);
+  overlappingRef.current = new Set(overlappingElements);
 
   useEffect(() => {
     for (const [element, visual] of visualRefs.current) {
       const isSelected = selected === element;
+      const isGrouped = groupElements.includes(element);
+      const issueColor = showProblems ? problemColor(element, outsideRoomRef.current, overlappingRef.current) : null;
       for (const { boardIndex, material, baseColor } of visual.materials) {
-        const isBoardSelected = isSelected && (selectedBoardIndex === null || selectedBoardIndex === boardIndex);
-        material.color.set(isBoardSelected ? 0xd8ff42 : baseColor);
-        material.emissive.set(isBoardSelected ? 0x293300 : 0x000000);
+        const isActiveBoard = isSelected && selectedBoardIndex === boardIndex;
+        const isWholeElementSelected = isSelected && selectedBoardIndex === null;
+        const isBoardGrouped = isSelected && boardGroupSelection.includes(boardIndex);
+        material.color.set(isActiveBoard || isWholeElementSelected ? 0xd8ff42 : isBoardGrouped ? 0x55bdf2 : isGrouped ? 0xffc857 : baseColor);
+        material.emissive.set(isActiveBoard || isWholeElementSelected ? 0x293300 : isBoardGrouped ? 0x002638 : isGrouped ? 0x332100 : 0x000000);
       }
-      visual.envelope.color.set(isSelected ? 0x465400 : 0x667066);
-      visual.envelope.opacity = isSelected ? 1 : 0.18;
+      const envelopeMaterial = visual.envelope.material as THREE.LineBasicMaterial;
+      envelopeMaterial.color.set(issueColor ?? (isSelected ? 0x465400 : isGrouped ? 0xa76000 : 0x667066));
+      envelopeMaterial.opacity = issueColor !== null || isSelected || isGrouped ? 1 : 0.18;
+      visual.envelope.visible = showEnvelopes || issueColor !== null;
     }
-  }, [selected, selectedBoardIndex]);
+    const axes = orientationAxesRef.current;
+    if (axes) {
+      const position = selected?.position;
+      axes.visible = Boolean(position && position.every((value) => value !== null && Number.isFinite(value)));
+      if (axes.visible && position) axes.position.set(position[0]!, position[1]!, -position[2]!);
+    }
+  }, [selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, showEnvelopes, showProblems]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -91,7 +129,19 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
     const gridSize = Math.max(roomWidth, roomLength);
     const grid = new THREE.GridHelper(gridSize, Math.max(10, Math.round(gridSize / 250)), 0x858d82, 0xcbd0c8);
     grid.position.set(roomLength / 2, 0, -roomWidth / 2);
+    grid.visible = showGrid;
     scene.add(grid);
+
+    const orientationAxes = new THREE.AxesHelper(Math.max(260, Math.min(520, gridSize * 0.09)));
+    orientationAxes.visible = false;
+    orientationAxes.renderOrder = 30;
+    for (const material of Array.isArray(orientationAxes.material) ? orientationAxes.material : [orientationAxes.material]) {
+      material.depthTest = false;
+      material.transparent = true;
+      material.opacity = 0.9;
+    }
+    scene.add(orientationAxes);
+    orientationAxesRef.current = orientationAxes;
 
     const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xf8faf6, roughness: 1, side: THREE.DoubleSide });
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(roomLength, roomHeight), wallMaterial);
@@ -104,10 +154,33 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
 
     const root = new THREE.Group();
     scene.add(root);
+    const groupEnvelope = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0xe07a00, transparent: true, opacity: 0.9, depthTest: false }),
+    );
+    groupEnvelope.visible = false;
+    groupEnvelope.renderOrder = 20;
+    scene.add(groupEnvelope);
+    groupEnvelopeRef.current = groupEnvelope;
     const pickable: THREE.Mesh[] = [];
     const rootElements = new Set(elements);
     const elementGroups = new Map<CorpusS3dElement, THREE.Group>();
     visualRefs.current.clear();
+    const textureLoader = new THREE.TextureLoader();
+    const loadedTextures = new Map<File, { texture: THREE.Texture; url: string }>();
+    const textureForBoard = (board: CorpusS3dBoard) => {
+      const source = materialTextures.get(board.materialUid.trim().toLocaleUpperCase("en-US"));
+      if (!source) return null;
+      const cached = loadedTextures.get(source.file);
+      if (cached) return cached.texture;
+      const url = URL.createObjectURL(source.file);
+      const texture = textureLoader.load(url);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.ClampToEdgeWrapping;
+      texture.wrapT = THREE.ClampToEdgeWrapping;
+      loadedTextures.set(source.file, { texture, url });
+      return texture;
+    };
 
     let elementIndex = 0;
     const addElement = (parent: THREE.Group, element: CorpusS3dElement) => {
@@ -130,6 +203,8 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
       if (rootElements.has(element)) elementGroups.set(element, group);
 
       const isSelected = selectedRef.current === element;
+      const isGrouped = groupElementsRef.current.has(element);
+      const issueColor = showProblems ? problemColor(element, outsideRoomRef.current, overlappingRef.current) : null;
       const envelopeGeometry = new THREE.BoxGeometry(width, height, depth);
       const pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
       const pickMesh = new THREE.Mesh(envelopeGeometry, pickMaterial);
@@ -139,25 +214,26 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
       pickable.push(pickMesh);
 
       const envelopeMaterial = new THREE.LineBasicMaterial({
-        color: isSelected ? 0x465400 : 0x667066,
+        color: issueColor ?? (isSelected ? 0x465400 : isGrouped ? 0xa76000 : 0x667066),
         transparent: true,
-        opacity: isSelected ? 1 : 0.18,
+        opacity: issueColor !== null || isSelected || isGrouped ? 1 : 0.18,
       });
       const envelope = new THREE.LineSegments(new THREE.EdgesGeometry(envelopeGeometry), envelopeMaterial);
       envelope.position.copy(pickMesh.position);
-      envelope.visible = showEnvelopes;
+      envelope.visible = showEnvelopes || issueColor !== null;
       group.add(envelope);
 
       const materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }> = [];
       for (const [boardIndex, board] of element.boards.entries()) {
         const boardSelected = isSelected && (selectedBoardRef.current === null || selectedBoardRef.current === boardIndex);
-        const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, showHoles);
+        const boardGrouped = isSelected && boardGroupSelectionRef.current.has(boardIndex);
+        const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, boardGrouped, isGrouped, showHoles, textureForBoard(board));
         if (!boardMesh) continue;
         group.add(boardMesh.mesh, boardMesh.edges, boardMesh.pickMesh);
         pickable.push(boardMesh.pickMesh);
         materials.push({ boardIndex, material: boardMesh.material, baseColor: boardMesh.baseColor });
       }
-      visualRefs.current.set(element, { materials, envelope: envelopeMaterial });
+      visualRefs.current.set(element, { materials, envelope });
       elementIndex += 1;
 
       for (const child of element.children) addElement(group, child);
@@ -169,7 +245,17 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
     const bounds = new THREE.Box3().setFromObject(root);
     let center: THREE.Vector3;
     let span: number;
-    if (!bounds.isEmpty()) {
+    const focusElements = groupElementsRef.current.size >= 2 ? [...groupElementsRef.current] : selectedRef.current ? [selectedRef.current] : [];
+    const focusIndexes = focusElements.map((element) => elements.indexOf(element)).filter((index) => index >= 0);
+    const focusBounds = cameraView === "selection" ? corpusGroupBounds(elements, focusIndexes) : null;
+    if (focusBounds) {
+      center = new THREE.Vector3(
+        (focusBounds.minX + focusBounds.maxX) / 2,
+        (focusBounds.minY + focusBounds.maxY) / 2,
+        -(focusBounds.minZ + focusBounds.maxZ) / 2,
+      );
+      span = Math.max(focusBounds.width, focusBounds.height, focusBounds.depth, 450);
+    } else if (!bounds.isEmpty()) {
       center = bounds.getCenter(new THREE.Vector3());
       const size = bounds.getSize(new THREE.Vector3());
       span = Math.max(size.x, size.y, size.z, 1800);
@@ -184,7 +270,13 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
     else if (cameraView === "top") {
       camera.up.set(0, 0, -1);
       camera.position.set(center.x, center.y + span * 1.8, center.z);
-    } else camera.position.set(center.x + span * 1.05, center.y + span * 0.72, center.z - span * 1.25);
+    } else if (cameraView === "selection") camera.position.set(center.x + span * 1.05, center.y + span * 0.72, center.z - span * 1.25);
+    else camera.position.set(center.x + span * 1.05, center.y + span * 0.72, center.z - span * 1.25);
+    if (!restoredCameraRef.current && retainedRoomCamera) {
+      camera.position.fromArray(retainedRoomCamera.position);
+      controls.target.fromArray(retainedRoomCamera.target);
+      restoredCameraRef.current = true;
+    }
     camera.near = Math.max(5, span / 1000);
     camera.far = Math.max(40000, span * 10);
     camera.updateProjectionMatrix();
@@ -194,7 +286,7 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
     const pointer = new THREE.Vector2();
     let downPoint: { x: number; y: number } | null = null;
     let handledPointerClick = false;
-    let drag: { element: CorpusS3dElement; group: THREE.Group; plane: THREE.Plane; offsetX: number; offsetZ: number; originalPosition: [number, number, number]; position: [number, number, number] } | null = null;
+    let drag: { element: CorpusS3dElement; group: THREE.Group; plane: THREE.Plane; offsetX: number; offsetZ: number; originalPosition: [number, number, number]; position: [number, number, number]; grouped: Array<{ group: THREE.Group; x: number; z: number }> } | null = null;
     const hitAt = (clientX: number, clientY: number) => {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -203,12 +295,12 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
       const hits = raycaster.intersectObjects(pickable, false);
       return hits.find((entry) => entry.object.userData.boardIndex !== undefined) ?? hits[0];
     };
-    const pickAt = (clientX: number, clientY: number) => {
+    const pickAt = (clientX: number, clientY: number, toggleGroup = false) => {
       const hit = hitAt(clientX, clientY);
       const element = hit?.object.userData.element as CorpusS3dElement | undefined;
-      const boardIndex = hit?.object.userData.boardIndex as number | undefined;
-      if (element && boardIndex !== undefined) onSelectBoard(element, boardIndex);
+      if (element && toggleGroup && rootElements.has(element)) onToggleGroup(element);
       else if (element) onSelect(element);
+      else onClearSelection();
     };
     const onPointerDown = (event: PointerEvent) => {
       downPoint = { x: event.clientX, y: event.clientY };
@@ -228,6 +320,9 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
         offsetZ: point.z - group.position.z,
         originalPosition: [group.position.x, element.position[1], -group.position.z],
         position: [group.position.x, element.position[1], -group.position.z],
+        grouped: groupElementsRef.current.has(element) && groupElementsRef.current.size >= 2
+          ? [...groupElementsRef.current].map((item) => elementGroups.get(item)).filter((item): item is THREE.Group => Boolean(item)).map((item) => ({ group: item, x: item.position.x, z: item.position.z }))
+          : [],
       };
       controls.enabled = false;
       renderer.domElement.setPointerCapture(event.pointerId);
@@ -242,10 +337,16 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
       raycaster.setFromCamera(pointer, camera);
       const point = raycaster.ray.intersectPlane(drag.plane, new THREE.Vector3());
       if (!point) return;
-      const x = Math.round((point.x - drag.offsetX) / 10) * 10;
-      const worldZ = Math.round((point.z - drag.offsetZ) / 10) * 10;
+      const x = Math.round((point.x - drag.offsetX) / snapStep) * snapStep;
+      const worldZ = Math.round((point.z - drag.offsetZ) / snapStep) * snapStep;
       drag.group.position.x = x;
       drag.group.position.z = worldZ;
+      const deltaX = x - drag.originalPosition[0];
+      const deltaWorldZ = worldZ + drag.originalPosition[2];
+      for (const item of drag.grouped) {
+        item.group.position.x = item.x + deltaX;
+        item.group.position.z = item.z + deltaWorldZ;
+      }
       drag.position = [x, drag.position[1], -worldZ];
       event.preventDefault();
     };
@@ -256,21 +357,39 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
         controls.enabled = true;
         handledPointerClick = true;
         if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
-        if (completed.position.some((value, index) => value !== completed.originalPosition[index])) onMove(completed.element, completed.position);
+        if (completed.position.some((value, index) => value !== completed.originalPosition[index])) {
+          if (completed.grouped.length) onMoveGroup([completed.position[0] - completed.originalPosition[0], 0, completed.position[2] - completed.originalPosition[2]]);
+          else onMove(completed.element, completed.position);
+        }
         downPoint = null;
         event.preventDefault();
         return;
       }
-      if (!downPoint || Math.hypot(event.clientX - downPoint.x, event.clientY - downPoint.y) > 5) return;
+      if (!downPoint) return;
+      if (Math.hypot(event.clientX - downPoint.x, event.clientY - downPoint.y) > 5) {
+        downPoint = null;
+        handledPointerClick = true;
+        return;
+      }
       handledPointerClick = true;
-      pickAt(event.clientX, event.clientY);
+      const hit = hitAt(event.clientX, event.clientY);
+      const clickedElement = hit?.object.userData.element as CorpusS3dElement | undefined;
+      pickAt(event.clientX, event.clientY, event.ctrlKey || event.metaKey || event.shiftKey);
+      const now = performance.now();
+      const previousClick = lastElementClickRef.current;
+      if (!moveMode && clickedElement && previousClick?.element === clickedElement && now - previousClick.time <= 450) {
+        lastElementClickRef.current = null;
+        onOpenData();
+      } else {
+        lastElementClickRef.current = clickedElement ? { element: clickedElement, time: now } : null;
+      }
     };
     const onClick = (event: MouseEvent) => {
       if (handledPointerClick) {
         handledPointerClick = false;
         return;
       }
-      pickAt(event.clientX, event.clientY);
+      pickAt(event.clientX, event.clientY, event.ctrlKey || event.metaKey || event.shiftKey);
     };
     renderer.domElement.addEventListener("pointerdown", onPointerDown, { capture: true });
     renderer.domElement.addEventListener("pointermove", onPointerMove, { capture: true });
@@ -297,6 +416,7 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
     render();
 
     return () => {
+      retainedRoomCamera = { position: camera.position.toArray(), target: controls.target.toArray() };
       cancelAnimationFrame(frame);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown, { capture: true });
@@ -311,13 +431,31 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
           for (const material of materials) material.dispose();
         }
       });
+      for (const { texture, url } of loadedTextures.values()) {
+        texture.dispose();
+        URL.revokeObjectURL(url);
+      }
       renderer.dispose();
       renderer.domElement.remove();
       visualRefs.current.clear();
+      if (groupEnvelopeRef.current === groupEnvelope) groupEnvelopeRef.current = null;
+      if (orientationAxesRef.current === orientationAxes) orientationAxesRef.current = null;
     };
-  }, [elements, room, onSelect, onSelectBoard, onMove, showEnvelopes, showHoles, moveMode, viewRevision, cameraView]);
+  }, [elements, room, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData, showEnvelopes, showHoles, showProblems, showGrid, snapStep, moveMode, viewRevision, cameraView]);
 
-  const chooseView = (view: "home" | "front" | "side" | "top") => {
+  useEffect(() => {
+    const envelope = groupEnvelopeRef.current;
+    if (!envelope) return;
+    const indexes = groupElements.map((element) => elements.indexOf(element)).filter((index) => index >= 0);
+    const bounds = groupElements.length >= 2 ? corpusGroupBounds(elements, indexes) : null;
+    envelope.visible = showEnvelopes && bounds !== null;
+    if (!bounds) return;
+    envelope.geometry.dispose();
+    envelope.geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(bounds.width + 8, bounds.height + 8, bounds.depth + 8));
+    envelope.position.set((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, -(bounds.minZ + bounds.maxZ) / 2);
+  }, [elements, groupElements, showEnvelopes]);
+
+  const chooseView = (view: "home" | "front" | "side" | "top" | "selection") => {
     setCameraView(view);
     setViewRevision((value) => value + 1);
   };
@@ -328,29 +466,171 @@ export function Room3DView({ elements, room, selected, selectedBoardIndex, onSel
         <div>
           <p className="eyebrow">3D rekonstrukcija</p>
           <h2>Prostor elemenata</h2>
-          <span>{moveMode ? "Režim pomjeranja: povuci korijenski element · mreža 10 mm" : "Lijevi klik: izbor · povlačenje: rotacija · točkić: zum"}</span>
+          <span>{moveMode ? `Povuci element ili grupu po podu · snap ${snapStep} mm` : "Klik bira · dvoklik uređuje element · lijevo povlačenje orbitira · desno pomjera pogled · točkić zumira"}</span>
         </div>
         <div className="three-controls">
           <button aria-pressed={moveMode} onClick={() => setMoveMode((value) => !value)}>Premjesti</button>
-          <button aria-pressed={showEnvelopes} onClick={() => setShowEnvelopes((value) => !value)}>Omotači</button>
-          <button aria-pressed={showHoles} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
           <button aria-pressed={cameraView === "front"} onClick={() => chooseView("front")}>Prednji</button>
           <button aria-pressed={cameraView === "side"} onClick={() => chooseView("side")}>Bočni</button>
           <button aria-pressed={cameraView === "top"} onClick={() => chooseView("top")}>Gornji</button>
+          <button aria-pressed={cameraView === "selection"} disabled={!selected && groupElements.length < 2} onClick={() => chooseView("selection")}>Fokus na izbor</button>
           <button onClick={() => chooseView("home")}>Početni</button>
+          <label className="canvas-snap">Snap<select value={snapStep} onChange={(event) => setSnapStep(Number(event.target.value) as 1 | 10 | 50)}><option value="1">1 mm</option><option value="10">10 mm</option><option value="50">50 mm</option></select></label>
+          <details className="canvas-options">
+            <summary>Prikaz</summary>
+            <div>
+              <button aria-pressed={showEnvelopes} onClick={() => setShowEnvelopes((value) => !value)}>Omotači</button>
+              <button aria-pressed={showGrid} onClick={() => setShowGrid((value) => !value)}>Mreža</button>
+              <button aria-pressed={showHoles} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
+              <button aria-pressed={showProblems} disabled={!outsideRoomElements.length && !overlappingElements.length} onClick={() => setShowProblems((value) => !value)}>Problemi ({new Set([...outsideRoomElements, ...overlappingElements]).size})</button>
+            </div>
+          </details>
           <div className="three-axis"><span className="axis-x">X</span><span className="axis-y">Y</span><span className="axis-z">Z</span></div>
         </div>
       </div>
       <div className="three-canvas" ref={containerRef} />
+      {(outsideRoomElements.length > 0 || overlappingElements.length > 0) && <div className="three-problem-legend" aria-label="Legenda problema rasporeda"><span><i className="outside" /> Izvan prostorije: {outsideRoomElements.length}</span><span><i className="overlap" /> Preklapanje: {overlappingElements.length}</span></div>}
       <div className="drawing-selection">
         {selected ? selected.visible === false
           ? <><strong>{selected.name || "Neimenovan element"}</strong><span>Element je sakriven i nije prikazan u 3D prostoru.</span><button onClick={onOpenData}>Uredi element →</button></>
-          : <><strong>{selectedBoardIndex !== null ? selected.boards[selectedBoardIndex]?.name || `Ploča ${selectedBoardIndex + 1}` : selected.name || "Neimenovan element"}</strong><span>{selectedBoardIndex !== null ? `${selected.name} · ${formatBoardDimensions(selected.boards[selectedBoardIndex])}` : `${selected.code || selected.className} · ${formatDimensions(selected)}`}</span><button onClick={onOpenData}>{selectedBoardIndex !== null ? "Uredi ploču →" : "Otvori podatke →"}</button></>
+          : <><strong>{selected.name || "Neimenovan element"}</strong><span>{selected.code || selected.className} · {formatDimensions(selected)}</span><button onClick={onOpenData}>Uredi element →</button></>
           : <span>Izaberi element u 3D prikazu.</span>}
       </div>
-      <p className="drawing-note"><strong>Status rekonstrukcije:</strong> Prikazane su ploče prema lokalnim koordinatama, smjeru i konturi iz S3D-a. RPL=0/1 bušenja na suprotnim glavnim plohama stvarne su šupljine; tamni cilindri ostaju za rijetki RPL=2 i ostale nedokazane ravni. Stil 2 koristi radijus luka, a stil 1 glatku interpolaciju.</p>
+      <p className="drawing-note"><strong>Status rekonstrukcije:</strong> Prikazane su ploče prema lokalnim koordinatama, smjeru i konturi iz S3D-a. Tekstura se koristi samo kada lokalni katalog ima jedan tačan MATUID i postojeću sliku; Corpus TEXX/TEXY/TEXZ skala i orijentacija još se ne nagađaju. RPL=0/1 bušenja na suprotnim glavnim plohama stvarne su šupljine; tamni cilindri ostaju za rijetki RPL=2 i ostale nedokazane ravni.</p>
     </div>
   );
+}
+
+export function Element3DPreview({ element, selectedBoardIndex, onSelectBoard }: { element: CorpusS3dElement; selectedBoardIndex: number | null; onSelectBoard(boardIndex: number | null): void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const boardMaterialsRef = useRef<Array<{ index: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }>>([]);
+  const axesRef = useRef<THREE.AxesHelper | null>(null);
+
+  useEffect(() => {
+    for (const entry of boardMaterialsRef.current) {
+      const active = entry.index === selectedBoardIndex;
+      entry.material.color.set(active ? 0xd8ff42 : entry.baseColor);
+      entry.material.emissive.set(active ? 0x293300 : 0x000000);
+    }
+    const axes = axesRef.current;
+    if (!axes) return;
+    const board = selectedBoardIndex === null ? null : element.boards[selectedBoardIndex];
+    const position = board?.position ?? [0, 0, 0];
+    axes.position.set(position[0] ?? 0, position[1] ?? 0, -(position[2] ?? 0));
+  }, [element, selectedBoardIndex]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf0f2ed);
+    const camera = new THREE.PerspectiveCamera(36, 1, 2, 30000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 80;
+    controls.maxDistance = 12000;
+    controls.screenSpacePanning = true;
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8d9688, 1.55));
+    const light = new THREE.DirectionalLight(0xffffff, 1.7);
+    light.position.set(1800, 2600, 2200);
+    scene.add(light);
+
+    const root = new THREE.Group();
+    const pickable: THREE.Mesh[] = [];
+    const materialEntries: Array<{ index: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }> = [];
+    element.boards.forEach((board, index) => {
+      const visual = createBoardMesh(board, element, 0, index, false, false, false, true, null);
+      if (!visual) return;
+      root.add(visual.mesh, visual.edges, visual.pickMesh);
+      pickable.push(visual.mesh);
+      materialEntries.push({ index, material: visual.material, baseColor: visual.baseColor });
+    });
+    scene.add(root);
+    boardMaterialsRef.current = materialEntries;
+    const bounds = new THREE.Box3().setFromObject(root);
+    const center = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
+    const size = bounds.isEmpty() ? new THREE.Vector3(600, 800, 600) : bounds.getSize(new THREE.Vector3());
+    const span = Math.max(size.x, size.y, size.z, 250);
+    controls.target.copy(center);
+    camera.position.set(center.x + span * 1.55, center.y + span * 1.05, center.z - span * 2.15);
+    camera.near = Math.max(1, span / 1000);
+    camera.far = Math.max(30000, span * 12);
+    camera.updateProjectionMatrix();
+    controls.update();
+
+    const axes = new THREE.AxesHelper(Math.max(80, Math.min(220, span * 0.22)));
+    axes.renderOrder = 20;
+    for (const material of Array.isArray(axes.material) ? axes.material : [axes.material]) material.depthTest = false;
+    scene.add(axes);
+    axesRef.current = axes;
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let downPoint: { x: number; y: number } | null = null;
+    let pointerMoved = false;
+    const onPointerDown = (event: PointerEvent) => { downPoint = { x: event.clientX, y: event.clientY }; pointerMoved = false; };
+    const onPointerMove = (event: PointerEvent) => {
+      if (downPoint && Math.hypot(event.clientX - downPoint.x, event.clientY - downPoint.y) > 4) pointerMoved = true;
+    };
+    const onClick = (event: MouseEvent) => {
+      downPoint = null;
+      if (pointerMoved) { pointerMoved = false; return; }
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects(pickable, false)[0];
+      onSelectBoard(hit ? Number(hit.object.userData.boardIndex) : null);
+    };
+    renderer.domElement.addEventListener("pointerdown", onPointerDown, { capture: true });
+    renderer.domElement.addEventListener("pointermove", onPointerMove, { capture: true });
+    renderer.domElement.addEventListener("click", onClick, { capture: true });
+    const resize = () => {
+      const width = Math.max(1, container.clientWidth);
+      const height = Math.max(1, container.clientHeight);
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    resize();
+    let frame = 0;
+    const render = () => { controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(render); };
+    render();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      renderer.domElement.removeEventListener("pointermove", onPointerMove, { capture: true });
+      renderer.domElement.removeEventListener("click", onClick, { capture: true });
+      controls.dispose();
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) material.dispose();
+        }
+      });
+      renderer.dispose();
+      renderer.domElement.remove();
+      boardMaterialsRef.current = [];
+      axesRef.current = null;
+    };
+  }, [element, onSelectBoard]);
+
+  return <div className="element-preview-3d"><div ref={containerRef} /><span>Povuci za okretanje · klik bira ploču · točkić zumira</span></div>;
+}
+
+function problemColor(element: CorpusS3dElement, outsideRoom: ReadonlySet<CorpusS3dElement>, overlapping: ReadonlySet<CorpusS3dElement>): number | null {
+  if (outsideRoom.has(element)) return 0xd43d32;
+  if (overlapping.has(element)) return 0xb00060;
+  return null;
 }
 
 function createBoardMesh(
@@ -359,7 +639,10 @@ function createBoardMesh(
   elementIndex: number,
   boardIndex: number,
   selected: boolean,
+  boardGrouped: boolean,
+  grouped: boolean,
   showHoles: boolean,
+  texture: THREE.Texture | null,
 ): { mesh: THREE.Mesh; edges: THREE.LineSegments; pickMesh: THREE.Mesh; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation } | null {
   if (board.visible === false) return null;
   const [x, y, z] = board.position;
@@ -371,16 +654,17 @@ function createBoardMesh(
 
   const [sizeX, sizeY, sizeZ] = corpusBoardDimensions(board.direction, height!, width!, thickness!);
   const geometry = createBoardGeometry(board, sizeX, sizeY, sizeZ, thickness!, showHoles);
-  const baseColor = colorForBoard(board, element, elementIndex, boardIndex);
+  const baseColor = texture ? 0xffffff : colorForBoard(board, element, elementIndex, boardIndex);
   const material = new THREE.MeshStandardMaterial({
-    color: selected ? 0xd8ff42 : baseColor,
-    emissive: selected ? 0x293300 : 0x000000,
+    color: selected ? 0xd8ff42 : boardGrouped ? 0x55bdf2 : grouped ? 0xffc857 : baseColor,
+    emissive: selected ? 0x293300 : boardGrouped ? 0x002638 : grouped ? 0x332100 : 0x000000,
     roughness: 0.72,
     metalness: 0.015,
     side: THREE.DoubleSide,
     transparent: board.transparent === true,
     opacity: board.transparent === true ? 0.42 : 1,
     depthWrite: board.transparent !== true,
+    map: texture,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.position.set(x! + sizeX / 2, y! + sizeY / 2, -z! + sizeZ / 2);

@@ -52,3 +52,19 @@ test("dokazani element i SMJER aliasi rade direktno u CMK formulama", () => {
   const fields = Object.fromEntries(simulation.operations[0]!.fields.map((field) => [field.key, field.value]));
   assert.deepEqual(fields, { GX: 300, GY: 800, GD: 56, GP: 1 });
 });
+
+test("izlaže razriješene elementne varijable i kroz Corpus EVAR prefiks", () => {
+  const element = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="E"><EVAR VAR0="TIP_PODA=1" VAR1="DUBINA_FALCA_ILI_NUTA=8" VAR2="IZVEDENA=DUBINA_FALCA_ILI_NUTA+1"/><DASKE><AD DNAME="Bok" VISINA="720" DUBINA="560" DEBLJINA="18" SMJER="0"/><AD DNAME="Pod" VISINA="564" DUBINA="520" DEBLJINA="18" SMJER="2"/></DASKE></ELEMENT></PROJECTFILE>`).elements[0]!;
+  const values = corpusMacroBoardContext(element, element.boards[0]!, element.boards[1]!);
+  assert.equal(values.TIP_PODA, 1);
+  assert.equal(values["EVAR.TIP_PODA"], 1);
+  assert.equal(values["EVAR.DUBINA_FALCA_ILI_NUTA"], 8);
+  assert.equal(values["EVAR.IZVEDENA"], 9);
+});
+
+test("čuva PMU naziv konverzije kao tekstualni literal", () => {
+  const simulation = simulateCorpusCmk(parseCorpusCmk(`[PILA1]\nPMU=Konvert_pila_u_glodalo\nPMT=110`));
+  const fields = simulation.operations[0]!.fields;
+  assert.equal(fields.find(({ key }) => key === "PMU")?.literal, "Konvert_pila_u_glodalo");
+  assert.equal(fields.find(({ key }) => key === "PMT")?.value, 110);
+});

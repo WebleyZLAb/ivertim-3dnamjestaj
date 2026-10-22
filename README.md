@@ -25,6 +25,7 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - standardne modelerske prečice `Ctrl+Z`, `Ctrl+Y` i `Ctrl+Shift+Z`, bez presretanja lokalnog Undo ponašanja unutar tekstualnih polja
 - uređivanje naziva, šifre, klase, vidljivosti, zaključavanja i dozvole uređivanja elementa
 - uređivanje položaja, mjera, debljine, orijentacije i uglova pojedinačnih ploča
+- precizno lokalno poravnanje nerotirane ploče uz lijevu/desnu, donju/gornju i prednju/zadnju granicu omotača elementa ili po centru sve tri ose, sa kontrolisanim unutrašnjim odmakom i bez nagađanja rotiranih ploča
 - uređivanje materijala, boje, providnosti i vidljivosti ploča sa trenutnim 3D osvježavanjem
 - ručno dodavanje, izmjena i brisanje osnovnih rupa ploče: Corpus izraz položaja, prečnik, dubina, ravan i ugao, uz Undo i S3D/E3D izvoz
 - stvarne 3D šupljine za kroz-bušenja i slijepa bušenja na dokazanim suprotnim glavnim plohama `RPL=0/1`, uključujući cilindrični zid i dno slijepog otvora
@@ -38,14 +39,29 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - šest trenutnih mjera izabranog elementa do zidova, poda i plafona prostorije, sa razlikom između slobodnog prostora, dodira, nepoznate granice i izlaska iz sobe
 - automatsko vraćanje cijelog rotiranog omotača elementa unutar svih šest granica sobe, uz podesiv sigurnosni odmak
 - automatski raspored svih korijenskih elemenata u X ili Z niz po stvarnim rotiranim omotačima, sa razmakom, odmakom od zida i jednim Undo korakom
+- višestruki izbor korijenskih elemenata pojedinačno iz stabla, Ctrl/Shift+klikom u 3D prikazu, odjednom za cijeli projekat ili samo za rezultate pretrage, uz `Esc` za čišćenje i posebno 3D isticanje; prikazuju se ukupna širina, visina i dubina njihovog rotiranog svjetskog omotača te svih šest udaljenosti do granica sobe, uključujući jasan izlazak van sobe; grupa se može sakriti, prikazati ili izolovati od ostalih korijena; podržani su zajedničko X/Y/Z pomjeranje, grupno 3D povlačenje, rotacija oko prvog označenog Corpus pivota, poravnanje svih ivica i centara prema tom sidru, ravnomjerna raspodjela stvarnih rotiranih omotača po X/Y/Z osi između krajnjih elemenata te slaganje prostornim redom sa tačno zadanim razmakom po bilo kojoj osi; cijela grupa se može centrirati po bilo kojoj osi prostorije, postaviti uz svih šest granica sa odmakom, vratiti unutar sobe, postaviti na mrežu, nezavisno kopirati jednom, kao seriju do 50 ponavljanja ili kao 2D mrežu sa nezavisnim X/Y/Z korakom kolona i redova, odnosno zajedno ukloniti kada sadrži samo dodane elemente, bez promjene izvornih fajlova i sa jednom Undo operacijom
+- Corpus `ELOCKED` i `EEDITABLE` zaštita se poštuje u pojedinačnoj i grupnoj geometriji, 3D pomjeranju, uređivanju ploča i bušenja te uklanjanju; identitet i stanje ostaju dostupni da korisnik može svjesno otključati element, dok pregled, vidljivost i nedestruktivno kopiranje ostaju dozvoljeni
+- precizno pomjeranje aktivnog elementa ili označene grupe tastaturom: strelice pomjeraju po X/Z, `PageUp`/`PageDown` po Y, osnovni korak je 10 mm, a uz `Shift` 1 mm; držanje tipke se ignoriše kako bi svaki svjesni pritisak ostao jedan Undo korak
+- tastaturna rotacija aktivnog elementa ili grupe: `Q` i `E` daju −90°/+90°, a `Shift+Q` i `Shift+E` fini korak od −1°/+1° oko Corpus pivota; ugao se normalizuje i zaštita zaključanih elemenata ostaje aktivna; uz aktivnu ili grupno označenu ploču komanda staje fail-closed umjesto da neočekivano rotira cijeli element
+- `Ctrl+D` kopira aktivni korijenski element ili označenu grupu sa odmakom od 100 mm iza njenog X omotača; `Delete`/`Backspace` uz potvrdu uklanja samo elemente dodane u radnu kopiju, nikada izvorne S3D/E3D korijene
+- precizno grupno pozicioniranje postavlja minimalni ugao zajedničkog rotiranog omotača na tačne X/Y/Z svjetske koordinate, čuvajući unutrašnji raspored i jednu Undo operaciju
+- grupna rotacija može koristiti prvi označeni Corpus pivot ili centar zajedničkog rotiranog omotača; oba režima čuvaju Y položaje, međusobni raspored i jednu Undo operaciju
+- 3D prikaz označene grupe koristi jedan naglašeni zajednički okvir stvarnog rotiranog X/Y/Z omotača, povezan s prekidačem „Omotači“
+- 3D kamera se može jednim klikom fokusirati na aktivni element ili zajednički omotač označene grupe, što olakšava rad u velikim prostorijama i projektima
+- prednji, gornji i bočni 2D nacrt prikazuju isprekidani zajednički omotač označene grupe i njegove ukupne horizontalne/vertikalne kote
+- Ctrl/Shift+klik na korijenski element u bilo kojoj 2D projekciji mijenja isti grupni izbor kao stablo i 3D prikaz; svaki član grupe je posebno istaknut i prije nastanka zajedničkog omotača
+- SVG izvoz nacrta čuva isti grupni omotač i ukupne kote kao interaktivni prikaz, bez dupliranja pojedinačnih kota aktivnog elementa
 - poseban 3D režim `Premjesti` za povlačenje korijenskih elemenata po horizontalnoj ravni, sa mrežom 10 mm i jednim Undo korakom po potezu
 - trenutna provjera izlaska elementa iz prostorije i prostornog preklapanja dokazivih osnih omotača
 - projektna krojna lista koja grupiše ploče po materijalu i izvornim Corpus mjerama, zadržava trag do elementa, broj rupa i skrivene ploče
+- krojna lista i potrošni materijal mogu se prebaciti između cijelog projekta i trenutnog grupnog izbora; oba CSV izvoza koriste vidljivi obuhvat i nazivom jasno označavaju grupni izvoz
+- ekran prostorije prikazuje odvojene brojeve izlazaka iz sobe i stvarnih zapreminskih preklapanja, sa prebacivanjem između cijelog projekta i označene grupe, punim opisom svakog upozorenja, direktnim otvaranjem problematičnih elemenata u 3D prikazu, automatskim vraćanjem izvan-sobnih elemenata i kontrolisanim SAT razdvajanjem preklopa po X ili Z osi kao jednim Undo korakom; 3D prikaz označava izlazak crvenim, a preklop ljubičastim omotačem
 - lokalni Excel-prijateljski CSV izvoz krojne liste u UTF-8 formatu sa tačka-zarez separatorom i decimalnim zarezom
 - odvojena proizvodna lista POTITEM zapisa: čuva TIP, deklarisani KOMADA zbir, identifikatore, materijal, broj pojavljivanja i STR0–STR3 primjene bez nagađanja dužine rubne trake
 - zaseban lokalni CSV izvoz potrošnog materijala i rubnih obrada
 - siguran izvoz izmjena u zaseban `.ivertim-corpus.json` fajl bez prepisivanja izvornog S3D-a
-- direktno otvaranje samostalnih `.E3D` elemenata i dodavanje jednog E3D elementa u otvoreni S3D projekat
+- automatski lokalni oporavak izmijenjene radne kopije u preglednikovoj IndexedDB bazi; početni ekran nudi svjesno vraćanje ili odbacivanje posljednje sesije, bez clouda i bez izmjene izvornog S3D/E3D fajla
+- direktno otvaranje i potpuno lokalno strukturno uređivanje samostalnih `.E3D` elemenata (dodavanje, kopiranje, preimenovanje, kontura, rubovi i uklanjanje ploča), te dodavanje jednog E3D elementa u otvoreni S3D projekat
 - udvostručavanje bilo kojeg korijenskog elementa; izvorni S3D element se prvo bez gubitka nepoznatih blokova pretvara u lokalni E3D fragment, pa se kopija dodaje kao novi element
 - linearni niz do 50 kopija korijenskog elementa sa nezavisnim X/Y/Z razmakom, kao jedna provjerljiva Undo/Redo operacija
 - lokalna pretraživa E3D biblioteka: izabere se cijeli `Elmsav` folder, a aplikacija prikaže elemente i njihove podfoldere bez slanja podataka
@@ -54,22 +70,43 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - kontrolisana primjena potpuno razriješenih RASTER simulacija kao stvarnih rupa na OBJ1 ploči; `GP=0` napreduje po Y, `GP=1` po X za `GR`, dok neriješeni i nedokazani GP režimi ostaju blokirani uz razlog
 - read-only RASTER audit nad 2.671 E3D fajlom: 3.958 MSRA sekcija, 51 jedinstven potpis i 0 grešaka dekodiranja; potvrđeni su GP režimi 0/1, dok rijetki GP=2 ostaje neprimijenjen
 - opcionalni ručni PMIN/PMAX, DELTA/DELLTA i AUTOST runtime kontekst te izvoz kompletnog CMK simulacijskog dokaza u JSON
-- automatski dokazani makro aliasi `SIRINA/VISINA/DUBINA` i `OBJ1/OBJ2.SMJER`; `AUTOST` ostaje ručni šestostrani kontekst jer nije svojstvo same ploče
+- automatski dokazani makro aliasi `SIRINA/VISINA/DUBINA`, `EVAR.*` za razriješene varijable elementa i `OBJ1/OBJ2.SMJER`; `AUTOST` ostaje ručni šestostrani kontekst jer nije svojstvo same ploče
 - automatske lokalne granice ploče `OBJ1/OBJ2.MINX/MAXX/MINY/MAXY` iz stvarne konture (ili pravougaonih mjera) i `OBJ1/OBJ2.GR` za debljinu, sa pregledom svih automatskih vrijednosti u simulaciji
 - granice dokaza za makro runtime kontekst dokumentovane su u [`docs/macro-runtime-context.md`](docs/macro-runtime-context.md)
 - read-only 3D dijagnostika dodira dvije nerotirane ploče razlikuje površinski spoj, razmak, zapreminsko preklapanje i dodir samo ivicom/tačkom te prikazuje lokalnu stranu obje ploče
 - svjetski presjek dodira preslikava se odvojeno u lokalnu radnu ravan `OBJ1` i `OBJ2`, sa jasno označenim lokalnim osama; još se ne proglašava automatskim `PMIN/PMAX`
 - read-only audit stvarnih S3D/E3D makro-parova: `pnpm audit:joints "PUTANJA_DO_FOLDERA"`
 - read-only audit ravni bušenja: `pnpm audit:holes "PUTANJA_DO_FOLDERA"`; dokazni zbir je u [`docs/hole-plane-evidence.md`](docs/hole-plane-evidence.md)
+- read-only audit samostalnih i ugrađenih `PILA` operacija, sa lokalnim 2D pregledom potpuno razriješene `GX/GY → PX/PY` linije, dubine, `PSP`, `GS` i sirovih režimskih polja; dokaz i granice su u [`docs/saw-operation-evidence.md`](docs/saw-operation-evidence.md)
+- lokalno učitavanje Corpus `elmtex` foldera: tekstualni `MatDat.MXC/K3X` katalozi povezuju ploču sa slikom samo preko jednog tačnog `MATUID`; 3D prikaz koristi lokalnu teksturu, a podaci izabrane ploče prikazuju sliku, kataloški naziv, UID, `TEXX/TEXY/TEXZ` i jasan razlog kada pogodak nije bezbjedan; dokaz i audit su u [`docs/material-library-evidence.md`](docs/material-library-evidence.md)
 - parametarski generator osnovnog E3D korpusa sa bokovima, podom, izborom pune gornje ploče ili prednjeg i zadnjeg vezača, ravnomjerno raspoređenim ili ručno visinski postavljenim policama sa nezavisnim prednjim/zadnjim uvlakom te do deset ravnomjerno ili ručno postavljenih unutrašnjih pregrada; police se dijele po stvarnim širinama nastalih polja; podržani su opciono postolje i uvučena cokla, naklopna ili unutar otvora uvučena vrata podijeljena po širini i frontovi ladica podijeljeni po visini, sa jednakim dijelovima ili ručnim omjerima i do deset fronti; poleđina može biti isključena, pločasta unutar korpusa ili tanka HDF poleđina na zadnjoj ravni sa zasebnim materijalom i bojom; vezači koriste dokazani `SMJER=2`, zadani presjek 100 × 18 mm i podesiv zadnji uvlak
+- pravljenje opšteg E3D elementa sa jednom početnom pločom, koji se dalje gradi postojećim alatima za dodavanje, kopiranje i uređivanje ploča
+- prilagođavanje omotača elementa njegovim direktnim pravougaonim pločama uz očuvan svjetski položaj; rotirane/nepotpune ploče i pod-elementi ostaju eksplicitno nepodržani umjesto nagađanja
 - udvostručavanje izabrane ploče u novom ili uvezenom elementu uz očuvanje konture, rupa, obrada i nepoznatih Corpus blokova
+- linearni niz do 50 kopija izabrane ploče sa nezavisnim X/Y/Z korakom; svaki puni `AD` fragment zadržava konturu, rupe, rubove i nepoznate obrade, a cijeli niz je jedna Undo operacija
+- 2D mreža izabrane ploče sa nezavisnim X/Y/Z koracima kolona i redova, do 50 novih kopija, provjerom preklopljenih ćelija i jednom Undo operacijom; svaki puni `AD` fragment ostaje očuvan
+- višestruki izbor ploča jednog elementa i zajedničko lokalno X/Y/Z pomjeranje kao jedna Undo operacija, bez promjene neoznačenih ploča, kontura, rupa, rubova ili obrada
+- ravnomjerna raspodjela najmanje tri označene nerotirane ploče po lokalnoj X/Y/Z osi, sa jednakim fizičkim razmakom između njihovih stvarnih osnih mjera, očuvanim krajnjim pločama i jednim Undo korakom
+- poravnanje više označenih nerotiranih ploča po fizičkoj početnoj ivici, centru ili završnoj ivici prve označene ploče na lokalnoj X/Y/Z osi, uz uvažavanje različitih Corpus orijentacija i mjera
+- grupno kopiranje označenih ploča sa zajedničkim lokalnim X/Y/Z pomakom i grupno uklanjanje uz potvrdu; puni `AD` fragmenti ostaju očuvani pri kopiranju, element uvijek zadržava najmanje jednu ploču, a svaka radnja je jedan Undo korak
+- primjena materijala, UID-a, boje, providnosti i vidljivosti aktivne ploče na više označenih ploča te brzo prikazivanje ili sakrivanje označenih ploča, bez promjene geometrije, kontura, rupa ili obrada i kao jedna Undo operacija
+- postavljanje zajedničkog fizičkog omotača označenih nerotiranih ploča uz početnu ili završnu granicu odnosno po centru lokalnog omotača elementa na X/Y/Z osi, sa kontrolisanim odmakom, očuvanim međusobnim rasporedom i jednom Undo operacijom
+- direktan izbor aktivne ploče klikom u 3D prikazu i zajednički grupni izbor ploča aktivnog elementa pomoću Ctrl/Shift+klika; 3D i tabela koriste isto stanje, aktivna ploča i članovi grupe imaju različito isticanje, a grupne komande su odmah dostupne u podacima
+- precizno tastaturno pomjeranje aktivne, pojedinačno označene ili 3D grupe ploča: strelice daju X/Z pomak, `PageUp`/`PageDown` Y pomak, osnovni korak je 10 mm, a uz `Shift` 1 mm; specifičniji izbor ploča ima prednost nad grupom korijenskih elemenata i svaki pritisak je jedna Undo operacija
+- `Ctrl+D` kopira označenu grupu ploča sa 100 mm razmaka iza njenog stvarnog X omotača, a `Delete`/`Backspace` uz potvrdu uklanja označene ploče; obje strukturne prečice su fail-closed dostupne samo za samostalne, nove i uvezene E3D elemente, čuvaju pune `AD` fragmente i predstavljaju po jednu Undo operaciju
+- kada nema grupnog izbora, `Ctrl+D` i `Delete`/`Backspace` isto daju prednost aktivnoj ploči nad cijelim elementom; kopija se postavlja 100 mm iza stvarnog X omotača ploče, uklanjanje zadržava najmanje jednu ploču, a nepodržani izvor staje bez promjene modela
+- ravnomjerna raspodjela izabrane ploče i do 50 njenih kopija između krajnjih X/Y/Z granica elementa, sa jednakim osnim korakom, odmakom od oba kraja i jednom Undo operacijom
+- kontrolisano pomjeranje ploče ranije/kasnije u novom ili uvezenom E3D elementu, uz očuvanje cijelog `AD` fragmenta, Undo i upozorenje da redoslijed može promijeniti `OBJ1/OBJ2` makro reference
 - uklanjanje izabrane ploče iz novog ili uvezenog elementa uz potvrdu, Undo/Redo i zaštitu posljednje ploče
 - opšte dodavanje nove pravougaone ploče u novi ili uvezeni element: naziv, sve tri Corpus orijentacije, položaj, mjere, materijal, boja, vidljivost i providnost; početne vrijednosti nude gotovu policu
 - preimenovanje ploče preko izvornog Corpus `DNAME` atributa uz očuvanje konture, rupa i obrada
 - vizuelno uređivanje proizvoljne zatvorene konture ravnih segmenata preko Corpus `KRIVULJE` tačaka: 2D pregled sa numerisanim tačkama, X/Z polja, dodavanje, uklanjanje i promjena redoslijeda, pravougaoni i ugaoni-urez predložak, provjera samopresijecanja i automatsko osvježavanje mjera ploče; dokazani lukovi ostaju zaključani
 - dodavanje, zamjena i uklanjanje rubne trake na Corpus `STR0`–`STR3` ivicama ploče uz očuvanje svih POTITEM zapisa koji nisu rubna obrada i trenutno osvježavanje proizvodne liste
 - izvoz izabranog uvezenog ili generisanog elementa kao samostalni `-IVERTIM.E3D` za ponovnu upotrebu u biblioteci
-- radna kopija verzije 7 čuva i dodane E3D elemente i izmjene rupa, uz čitanje starijih kopija verzija 1–6
+- radna kopija verzije 9 čuva dodane E3D elemente, izmjene rupa, postojeće `EVAR` vrijednosti i punu strukturu samostalnog E3D modela, uz čitanje starijih kopija verzija 1–8
+- postojeće `EVAR` vrijednosti mogu se uređivati bez promjene njihovih imena, `VARn` redoslijeda ili nepoznatih XML atributa; izrazi se čuvaju kao tekst i izvoze u S3D/E3D
+- novi, samostalni i uvezeni E3D elementi podržavaju i dodavanje, preimenovanje te uklanjanje varijabli; writer obnavlja dokazani neprekinuti `VAR0…VARn` niz, čuva ostale atribute i odbija dvosmislena imena
+- EVAR editor prije čuvanja lokalno prikazuje razriješenu vrijednost, nedostajuće reference, ciklične zavisnosti, nepodržanu sintaksu ili drugi nerješiv izraz; poznati geometrijski aliasi elementa ulaze u analizu, a nepoznata Corpus semantika ostaje samo upozorenje
 - izvoz novog `-IVERTIM.S3D` fajla mijenja samo dokazane atribute i ugrađuje dodane E3D elemente, čuvajući ostali izvorni XML
 - automatski testovi bez privatnih projektnih fajlova
 
@@ -85,14 +122,17 @@ pnpm audit:s3d "D:\sobasav"
 pnpm audit:s3d:machining "D:\sobasav"
 pnpm audit:s3d:c6dat "D:\sobasav"
 pnpm audit:s3d:macros "D:\sobasav"
+pnpm audit:s3d:saw "D:\sobasav"
 pnpm audit:e3d "D:\CorpusSolutions\Elmsav"
 pnpm audit:cmk "D:\CorpusSolutions\Makro"
 pnpm audit:cmk:holes "D:\CorpusSolutions\Elmsav" "Korpusiranje"
 pnpm audit:cmk:raster "D:\CorpusSolutions\Elmsav"
+pnpm audit:cmk:saw "D:\CorpusSolutions\Makro"
+pnpm audit:materials "D:\sobasav" "D:\CorpusSolutions\elmtex"
 ```
 
 ## Granice trenutne rekonstrukcije
 
 - Kroz-bušenja i slijepa bušenja na dokazanim suprotnim glavnim plohama `RPL=0/1` stvarne su šupljine u triangulisanoj geometriji; rijetki `RPL=2` i ostale nedokazane ravni ostaju cilindrični markeri.
 - `PTSTYLE=2` koristi kružni luk iz tetive i `PTARRA`; `PTSTYLE=1` ostaje kontrolisana interpolacija dok mu se ne potvrdi izvorna matematika.
-- Teksture materijala i proizvodne obrade poput utora, falca i CNC putanja još nisu rekonstruisane.
+- Teksture materijala rade za jednoznačan tačan `MATUID`, ali Corpus UV orijentacija i realna skala/ponavljanje iz `TEXX/TEXY/TEXZ` još nisu dokazani. 3D/izvozna primjena utora, falca i ostalih CNC putanja nije rekonstruisana; PILA linije imaju samo dokazani read-only lokalni pregled.

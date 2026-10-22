@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCorpusWorkingCopyFile, applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusRoom } from "../lib/corpus-model.ts";
-import { parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { applyCorpusWorkingCopyFile, applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables, updateCorpusRoom } from "../lib/corpus-model.ts";
+import { parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
 
 test("mijenja samo ciljani element u radnoj kopiji", () => {
   const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="Roditelj" EXPOX="0" EYPOS="0" EZPOS="0" EVISINA="100" ESIRINA="100" EDUBINA="100"><ELMLIST><ELM ENAME="Dijete" EXPOX="10" EYPOS="20" EZPOS="30" EVISINA="40" ESIRINA="50" EDUBINA="60"/></ELMLIST></ELEMENT></PROJECTFILE>`);
@@ -67,7 +67,7 @@ test("odbija zastarjelu radnu kopiju kada je projekat istog imena promijenjen", 
   assert.throws(() => applyCorpusWorkingCopyFile("isti.s3d", newer.elements, sidecar), /razlikuje od projekta/);
 });
 
-test("mijenja ploču, izvozi je u radnu kopiju verzije 7 i ponovo je učitava", () => {
+test("mijenja ploču, izvozi je u radnu kopiju verzije 9 i ponovo je učitava", () => {
   const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica" DXPOS="1" DYPOS="2" DZPOS="3" DUBINA="500" VISINA="600" DEBLJINA="18" SMJER="2" DKUT="0" XKUT="0" ZKUT="0"/></DASKE></ELEMENT></PROJECTFILE>`);
   const element = project.elements[0]!;
   const changed = updateCorpusBoard(project.elements, element, 0, {
@@ -77,7 +77,7 @@ test("mijenja ploču, izvozi je u radnu kopiju verzije 7 i ponovo je učitava", 
   assert.equal(changed.updatedElement!.boards[0]!.width, 510);
 
   const sidecar = createCorpusWorkingCopyFile("ploca.s3d", project.elements, changed.elements, "2026-10-18T09:00:00.000Z");
-  assert.equal(sidecar.version, 7);
+  assert.equal(sidecar.version, 9);
   assert.equal(sidecar.boardChanges.length, 1);
   assert.deepEqual(sidecar.boardChanges[0]!.elementPath, [0]);
   const imported = applyCorpusWorkingCopyFile("ploca.s3d", project.elements, sidecar);
@@ -85,19 +85,55 @@ test("mijenja ploču, izvozi je u radnu kopiju verzije 7 i ponovo je učitava", 
   assert.equal(imported[0]!.boards[0]!.direction, 1);
 });
 
-test("čuva dodani E3D element u radnoj kopiji verzije 7", () => {
+test("čuva dodani E3D element u radnoj kopiji verzije 9", () => {
   const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="Postojeći"/></PROJECTFILE>`);
   const sourceXml = `<ELEMENTFILE FILE="D1V" VER="17"><ELEMENT ENAME="D1V" EXPOX="100" EYPOS="200" EZPOS="300" ESIRINA="650" EVISINA="830" EDUBINA="570" CUSTOM="ostaje"/></ELEMENTFILE>`;
   const sidecar = createCorpusWorkingCopyFile("kuhinja.s3d", project.elements, project.elements, undefined, undefined, [{ sourceFile: "D1V.E3D", sourceXml }]);
   const imported = applyCorpusWorkingCopyProject("kuhinja.s3d", project.elements, project.room, sidecar);
 
-  assert.equal(sidecar.version, 7);
+  assert.equal(sidecar.version, 9);
   assert.equal(sidecar.imports.length, 1);
   assert.equal(imported.elements.length, 2);
   assert.equal(imported.elements[1]!.name, "D1V");
   assert.deepEqual(imported.elements[1]!.position, [100, 200, 300]);
   assert.equal(imported.importedE3dSources[0]!.sourceFile, "D1V.E3D");
   assert.equal(imported.importedE3dSources[0]!.originalElement, imported.elements[1]);
+});
+
+test("radna kopija verzije 9 čuva punu strukturu samostalnog E3D-a", () => {
+  const originalXml = `<ELEMENTFILE FILE="samostalni.E3D" VER="17"><ELEMENT ENAME="Samostalni"><DASKE DCOUNT="1"><AD DNAME="Prva" DXPOS="0" DYPOS="0" DZPOS="0" VISINA="600" DUBINA="500" DEBLJINA="18" SMJER="1"/></DASKE></ELEMENT></ELEMENTFILE>`;
+  const changedXml = originalXml.replace(`DCOUNT="1"`, `DCOUNT="2"`).replace(`</DASKE>`, `<AD DNAME="Druga" DXPOS="0" DYPOS="100" DZPOS="0" VISINA="600" DUBINA="500" DEBLJINA="18" SMJER="1"/></DASKE>`);
+  const original = parseCorpusE3d(originalXml);
+  const changed = parseCorpusE3d(changedXml);
+  const sidecar = createCorpusWorkingCopyFile("samostalni.E3D", original.elements, changed.elements, undefined, undefined, [], { sourceFile: "samostalni.E3D", sourceXml: changedXml });
+  const restored = applyCorpusWorkingCopyProject("SAMOSTALNI.e3d", original.elements, original.room, sidecar);
+
+  assert.equal(sidecar.version, 9);
+  assert.equal(sidecar.changes.length, 0);
+  assert.equal(restored.elements[0]!.boards.length, 2);
+  assert.equal(restored.elements[0]!.boards[1]!.name, "Druga");
+  assert.equal(restored.standaloneE3dSource!.sourceXml, changedXml);
+  assert.equal(restored.standaloneE3dSource!.originalElement, restored.elements[0]);
+});
+
+test("čuva izmjenu postojećih EVAR vrijednosti u radnoj kopiji verzije 9", () => {
+  const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="A"><EVAR VAR0="VISINA=100" VAR1="TIP=IF(VISINA&gt;50;1;0)"/></ELEMENT></PROJECTFILE>`);
+  const changed = updateCorpusElementVariables(project.elements, project.elements[0]!, { VISINA: "120", TIP: "IF(VISINA>60;2;0)" });
+  const sidecar = createCorpusWorkingCopyFile("varijable.s3d", project.elements, changed.elements);
+
+  assert.equal(sidecar.version, 9);
+  assert.deepEqual(sidecar.elementVariableChanges, [{ path: [0], before: { VISINA: "100", TIP: "IF(VISINA>50;1;0)" }, after: { VISINA: "120", TIP: "IF(VISINA>60;2;0)" } }]);
+  const restored = applyCorpusWorkingCopyFile("varijable.s3d", project.elements, sidecar);
+  assert.deepEqual(restored[0]!.variables, { VISINA: "120", TIP: "IF(VISINA>60;2;0)" });
+});
+
+test("radna kopija odbija dodavanje ili brisanje EVAR imena", () => {
+  const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="A"><EVAR VAR0="A=1"/></ELEMENT></PROJECTFILE>`);
+  const changed = updateCorpusElementVariables(project.elements, project.elements[0]!, { A: "2" });
+  const sidecar = createCorpusWorkingCopyFile("varijable.s3d", project.elements, changed.elements);
+  const invalid = structuredClone(sidecar);
+  invalid.elementVariableChanges[0]!.after = { A: "2", NOVA: "3" };
+  assert.throws(() => applyCorpusWorkingCopyFile("varijable.s3d", project.elements, invalid), /nije IVERTIM Corpus/);
 });
 
 test("dodaje, mijenja i briše rupe ploče kroz radnu kopiju", () => {

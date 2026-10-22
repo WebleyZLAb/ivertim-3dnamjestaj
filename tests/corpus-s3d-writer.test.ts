@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity } from "../lib/corpus-model.ts";
+import { updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables } from "../lib/corpus-model.ts";
 import { parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
-import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, removeCorpusE3dBoard, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, writeCorpusE3dGeometryCopy, writeCorpusS3dGeometryCopy, writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
+import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dGeometryCopy, writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
 
 test("upisuje E3D radnu kopiju i čuva nepoznate podatke", () => {
   const xml = `\uFEFF<!-- Ver=17-->\r\n<ELEMENTFILE FILE="D1V" VER="17"><ELEMENT ENAME="D1V" EXPOX="0" EYPOS="0" EZPOS="0" ESIRINA="600" EVISINA="820" EDUBINA="560" EKUT="0" CUSTOM="ostaje"><DASKE><AD DNAME="Bok" DXPOS="0" DYPOS="0" DZPOS="0" DUBINA="560" VISINA="720" DEBLJINA="18" SMJER="0"/></DASKE></ELEMENT></ELEMENTFILE>`;
@@ -135,6 +135,51 @@ test("upisuje identitet i stanje elementa i čuva nepoznate atribute", () => {
   assert.equal(reparsed.elements[0]!.locked, true);
 });
 
+test("mijenja samo postojeće EVAR vrijednosti i čuva atribute, redoslijed i izraze", () => {
+  const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="A"><EVAR VAR0="A=1" CUSTOM="ostaje" VAR1="B=IF(A&gt;0;2;3)"/></ELEMENT></PROJECTFILE>`;
+  const original = parseCorpusS3d(xml);
+  const changed = updateCorpusElementVariables(original.elements, original.elements[0]!, { A: "5", B: "IF(A>4;7;8)" });
+  const output = writeCorpusS3dGeometryCopy(xml, original.elements, changed.elements);
+
+  assert.match(output, /<EVAR VAR0="A=5" CUSTOM="ostaje" VAR1="B=IF\(A&gt;4;7;8\)"\/>/);
+  assert.deepEqual(parseCorpusS3d(output).elements[0]!.variables, { A: "5", B: "IF(A>4;7;8)" });
+});
+
+test("EVAR izvoz odbija nejednoznačno ponovljeno ime varijable", () => {
+  const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="A"><EVAR VAR0="A=1" VAR1="A=1"/></ELEMENT></PROJECTFILE>`;
+  const original = parseCorpusS3d(xml);
+  const changed = updateCorpusElementVariables(original.elements, original.elements[0]!, { A: "2" });
+  assert.throws(() => writeCorpusS3dGeometryCopy(xml, original.elements, changed.elements), /nije jednoznačno pronađena/);
+});
+
+test("strukturno dodaje, preimenuje i uklanja E3D varijable uz neprekinut VARn niz", () => {
+  const xml = `<ELEMENTFILE VER="17"><ELEMENT ENAME="A"><EVAR CUSTOM="ostaje" VAR0="A=1" VAR1="B=2"/><DASKE/></ELEMENT></ELEMENTFILE>`;
+  const output = replaceCorpusE3dElementVariables(xml, [0], { SIRINA: "600", BROJ_POLICA: "3", USLOV: "IF(BROJ_POLICA>0;1;0)" });
+
+  assert.match(output, /<EVAR CUSTOM="ostaje" VAR0="SIRINA=600" VAR1="BROJ_POLICA=3" VAR2="USLOV=IF\(BROJ_POLICA&gt;0;1;0\)"\/>/);
+  assert.deepEqual(parseCorpusE3d(output).elements[0]!.variables, { SIRINA: "600", BROJ_POLICA: "3", USLOV: "IF(BROJ_POLICA>0;1;0)" });
+  const removed = replaceCorpusE3dElementVariables(output, [0], { SIRINA: "650" });
+  assert.match(removed, /<EVAR CUSTOM="ostaje" VAR0="SIRINA=650"\/>/);
+  assert.doesNotMatch(removed, /VAR1=/);
+});
+
+test("dodaje prvi EVAR blok elementu koji ga nema i podržava ugniježđenu putanju", () => {
+  const xml = `<ELEMENTFILE VER="17"><ELEMENT ENAME="A"><ELMLIST><ELM ENAME="B"><DASKE/></ELM></ELMLIST></ELEMENT></ELEMENTFILE>`;
+  const output = replaceCorpusE3dElementVariables(xml, [0, 0], { TIP: "1" });
+  const parsed = parseCorpusE3d(output);
+
+  assert.deepEqual(parsed.elements[0]!.variables, {});
+  assert.deepEqual(parsed.elements[0]!.children[0]!.variables, { TIP: "1" });
+  assert.match(output, /<ELM ENAME="B"><EVAR VAR0="TIP=1"\/><DASKE\/>/);
+});
+
+test("strukturni EVAR editor odbija dvosmislena i semantički duplirana imena", () => {
+  const duplicateXml = `<ELEMENTFILE VER="17"><ELEMENT ENAME="A"><EVAR VAR0="WTH=1" VAR1="WTH=2"/></ELEMENT></ELEMENTFILE>`;
+  assert.throws(() => replaceCorpusE3dElementVariables(duplicateXml, [0], { WTH: "3" }), /nije jednoznačna/);
+  assert.throws(() => replaceCorpusE3dElementVariables(`<ELEMENTFILE><ELEMENT/></ELEMENTFILE>`, [0], { Sirina: "1", SIRINA: "2" }), /jednoznačni/);
+  assert.throws(() => replaceCorpusE3dElementVariables(`<ELEMENTFILE><ELEMENT/></ELEMENTFILE>`, [0], { "LOŠE=IME": "1" }), /znak =/);
+});
+
 test("upisuje ručno dodane i izmijenjene rupe u S3D kopiju", () => {
   const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica"><RUPE><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RAL="90"><RAS MODE="4"><MILTOOL>103</MILTOOL></RAS></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
   const original = parseCorpusS3d(xml);
@@ -198,6 +243,51 @@ test("udvostručava E3D ploču bez gubitka konture, rupa i nepoznatih obrada", (
   assert.throws(() => duplicateCorpusE3dBoard(xml, 4, "Nema"), /nije pronađena/);
 });
 
+test("pravi niz E3D ploča sa novim koordinatama i čuva cijeli izvorni fragment", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE DCOUNT="1">\r\n  <AD DNAME="Polica" DXPOS="18" DYPOS="100" DZPOS="0" CUSTOM="ostaje"><RUPE><GRUPA14 RNA="R1"/></RUPE><NEPOZNATO A="1"/></AD>\r\n</DASKE></ELEMENT></ELEMENTFILE>`;
+  const output = duplicateCorpusE3dBoardCopies(xml, 0, [
+    { name: "Polica 2", position: [18, 200, 0] },
+    { name: "Polica 3", position: [18, 300, -10] },
+  ]);
+  const boards = parseCorpusE3d(output).elements[0]!.boards;
+  assert.deepEqual(boards.map(({ name, position }) => [name, ...position]), [
+    ["Polica", 18, 100, 0], ["Polica 2", 18, 200, 0], ["Polica 3", 18, 300, -10],
+  ]);
+  assert.equal((output.match(/CUSTOM="ostaje"/g) ?? []).length, 3);
+  assert.equal((output.match(/<NEPOZNATO A="1"\/>/g) ?? []).length, 3);
+  assert.match(output, /DCOUNT="3"/);
+  assert.match(output, /\r\n  <AD DNAME="Polica 2"/);
+  assert.throws(() => duplicateCorpusE3dBoardCopies(xml, 0, []), /1 do 50/);
+  assert.throws(() => duplicateCorpusE3dBoardCopies(xml, 0, [{ name: "", position: [0, 0, 0] }]), /naziv/);
+});
+
+test("grupno kopira različite ploče uz očuvan redoslijed i pune fragmente", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE DCOUNT="3"><AD DNAME="A" CUSTOM="A"><RUPE/></AD><AD DNAME="B" CUSTOM="B"><NEPOZNATO/></AD><AD DNAME="C" CUSTOM="C"/></DASKE></ELEMENT></ELEMENTFILE>`;
+  const output = duplicateCorpusE3dBoards(xml, [
+    { boardIndex: 0, name: "A kopija", position: [10, 20, 30] },
+    { boardIndex: 2, name: "C kopija", position: [40, 50, 60] },
+  ]);
+  const boards = parseCorpusE3d(output).elements[0]!.boards;
+  assert.deepEqual(boards.map((board) => [board.name, ...board.position]), [
+    ["A", null, null, null], ["A kopija", 10, 20, 30], ["B", null, null, null], ["C", null, null, null], ["C kopija", 40, 50, 60],
+  ]);
+  assert.equal((output.match(/CUSTOM="A"/g) ?? []).length, 2);
+  assert.equal((output.match(/CUSTOM="C"/g) ?? []).length, 2);
+  assert.match(output, /DCOUNT="5"/);
+  assert.throws(() => duplicateCorpusE3dBoards(xml, [{ boardIndex: 3, name: "Nema", position: [0, 0, 0] }]), /nije pronađena/);
+});
+
+test("pomjera cijeli E3D AD fragment i čuva njegove nepoznate blokove", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE DCOUNT="3">\n  <AD DNAME="A"><UNKNOWN ID="A"/></AD>\n  <AD DNAME="B"><RUPE><GRUPA14 RNA="B"/></RUPE></AD>\n  <AD DNAME="C" CUSTOM="ostaje"/>\n</DASKE></ELEMENT></ELEMENTFILE>`;
+  const moved = moveCorpusE3dBoard(xml, 2, 0);
+  const parsed = parseCorpusE3d(moved);
+
+  assert.deepEqual(parsed.elements[0]!.boards.map(({ name }) => name), ["C", "A", "B"]);
+  assert.match(moved, /<AD DNAME="C" CUSTOM="ostaje"\/>[\s\S]*<AD DNAME="A"><UNKNOWN ID="A"\/><\/AD>[\s\S]*<AD DNAME="B"><RUPE>/);
+  assert.equal(moveCorpusE3dBoard(xml, 1, 1), xml);
+  assert.throws(() => moveCorpusE3dBoard(xml, 3, 0), /nije ispravna/);
+});
+
 test("uklanja samo izabranu E3D ploču i ažurira DCOUNT", () => {
   const xml = `<ELEMENTFILE VER="17"><ELEMENT ENAME="A"><DASKE DCOUNT="3">\n  <AD DNAME="Prva" CUSTOM="1"><RUPE/></AD>\n  <AD DNAME="Druga" CUSTOM="2"><NEPOZNATO/></AD>\n  <AD DNAME="Treća" CUSTOM="3"/>\n</DASKE></ELEMENT></ELEMENTFILE>`;
   const output = removeCorpusE3dBoard(xml, 1);
@@ -209,6 +299,15 @@ test("uklanja samo izabranu E3D ploču i ažurira DCOUNT", () => {
   assert.match(output, /CUSTOM="3"/);
   assert.doesNotMatch(output, /CUSTOM="2"|<NEPOZNATO\/>/);
   assert.throws(() => removeCorpusE3dBoard(`<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Jedina"/></DASKE></ELEMENT></ELEMENTFILE>`, 0), /Posljednja ploča/);
+});
+
+test("grupno uklanja označene ploče i zadržava najmanje jednu", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE DCOUNT="4"><AD DNAME="A"/><AD DNAME="B"/><AD DNAME="C"/><AD DNAME="D"/></DASKE></ELEMENT></ELEMENTFILE>`;
+  const output = removeCorpusE3dBoards(xml, [2, 0, 2]);
+  assert.deepEqual(parseCorpusE3d(output).elements[0]!.boards.map((board) => board.name), ["B", "D"]);
+  assert.match(output, /DCOUNT="2"/);
+  assert.throws(() => removeCorpusE3dBoards(xml, [0, 1, 2, 3]), /najmanje jednu/);
+  assert.throws(() => removeCorpusE3dBoards(xml, [4]), /nije pronađena/);
 });
 
 test("dodaje novu pravougaonu E3D ploču sa potpunom geometrijom i izgledom", () => {

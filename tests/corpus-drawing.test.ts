@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { corpusDrawingShape, corpusDrawingSpans, corpusDrawingSvg } from "../lib/corpus-drawing.ts";
+import { corpusDrawingGroupBounds, corpusDrawingShape, corpusDrawingSpans, corpusDrawingSvg } from "../lib/corpus-drawing.ts";
 import { parseCorpusS3d } from "../lib/corpus-s3d.ts";
 
 const element = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="Rotiran" EXPOX="100" EYPOS="20" EZPOS="500" ESIRINA="600" EVISINA="800" EDUBINA="400" EKUT="90"><DASKE/></ELEMENT></PROJECTFILE>`).elements[0]!;
@@ -31,4 +31,16 @@ test("izvozi samostalan SVG nacrt sa rotiranim otiskom i kotama", () => {
   assert.match(svg, /Element &amp; &lt;test&gt;/);
   assert.match(svg, />400 mm<\/text>/);
   assert.match(svg, />600 mm<\/text>/);
+});
+
+test("izvozi zajednički omotač i samo ukupne kote označene grupe", () => {
+  const second = { ...element, name: "Drugi", position: [500, 120, 900] as const };
+  assert.deepEqual(corpusDrawingGroupBounds([element, second], "front"), { minH: -300, maxH: 500, minV: 20, maxV: 920 });
+  assert.equal(corpusDrawingGroupBounds([element], "front"), null);
+  const svg = corpusDrawingSvg([element, second], "front", element, [element, second]);
+  assert.match(svg, /class="group-envelope"/);
+  assert.match(svg, /<rect x="-300" y="120" width="800" height="900"/);
+  assert.match(svg, />800 mm<\/text>/);
+  assert.match(svg, />900 mm<\/text>/);
+  assert.equal((svg.match(/class="dimension"/g) ?? []).length, 1);
 });

@@ -2,6 +2,7 @@ import { parseCorpusE3d, type CorpusS3dBoard, type CorpusS3dElement, type Corpus
 
 export type ElementGeometryPatch = Pick<CorpusS3dElement, "position" | "width" | "height" | "depth" | "angle"> & Partial<Pick<CorpusS3dElement, "xAngle" | "zAngle">>;
 export type ElementIdentityPatch = Pick<CorpusS3dElement, "name" | "code" | "className" | "visible" | "editable" | "locked">;
+export type ElementVariablesPatch = Readonly<Record<string, string>>;
 export type BoardGeometryPatch = Pick<CorpusS3dBoard, "position" | "width" | "height" | "thickness" | "direction" | "angle" | "xAngle" | "zAngle">;
 export type BoardAppearancePatch = Pick<CorpusS3dBoard, "materialName" | "materialUid" | "color" | "transparent" | "visible">;
 export type BoardHolesPatch = readonly CorpusS3dHole[];
@@ -29,6 +30,12 @@ export type CorpusElementIdentityChange = {
   after: ElementIdentityPatch;
 };
 
+export type CorpusElementVariablesChange = {
+  path: number[];
+  before: ElementVariablesPatch;
+  after: ElementVariablesPatch;
+};
+
 export type CorpusBoardAppearanceChange = {
   elementPath: number[];
   boardIndex: number;
@@ -52,7 +59,7 @@ export type CorpusImportedElementFile = {
 
 export type CorpusWorkingCopyFile = {
   format: "ivertim-corpus-working-copy";
-  version: 7;
+  version: 9;
   sourceFile: string;
   exportedAt: string;
   changes: CorpusGeometryChange[];
@@ -61,7 +68,9 @@ export type CorpusWorkingCopyFile = {
   boardHolesChanges: CorpusBoardHolesChange[];
   roomChange: { before: RoomGeometryPatch; after: RoomGeometryPatch } | null;
   elementIdentityChanges: CorpusElementIdentityChange[];
+  elementVariableChanges: CorpusElementVariablesChange[];
   imports: CorpusImportedElementFile[];
+  standaloneE3d: CorpusImportedElementFile | null;
 };
 
 export function updateCorpusRoom(room: CorpusS3dRoom, patch: RoomGeometryPatch): CorpusS3dRoom {
@@ -85,12 +94,28 @@ export function updateCorpusElement(
   return { elements: visit(elements), updated };
 }
 
+export function replaceCorpusElement(
+  elements: readonly CorpusS3dElement[],
+  target: CorpusS3dElement,
+  replacement: CorpusS3dElement,
+): { elements: CorpusS3dElement[]; updated: CorpusS3dElement | null } {
+  return updateCorpusElementRecord(elements, target, replacement);
+}
+
 export function updateCorpusElementIdentity(
   elements: readonly CorpusS3dElement[],
   target: CorpusS3dElement,
   patch: ElementIdentityPatch,
 ): { elements: CorpusS3dElement[]; updated: CorpusS3dElement | null } {
   return updateCorpusElementRecord(elements, target, { ...target, ...patch });
+}
+
+export function updateCorpusElementVariables(
+  elements: readonly CorpusS3dElement[],
+  target: CorpusS3dElement,
+  variables: ElementVariablesPatch,
+): { elements: CorpusS3dElement[]; updated: CorpusS3dElement | null } {
+  return updateCorpusElementRecord(elements, target, { ...target, variables: { ...variables } });
 }
 
 export function updateCorpusBoard(
@@ -179,12 +204,14 @@ export function createCorpusWorkingCopyFile(
   exportedAt = new Date().toISOString(),
   rooms?: { original: CorpusS3dRoom; current: CorpusS3dRoom },
   imports: readonly CorpusImportedElementFile[] = [],
+  standaloneE3d: CorpusImportedElementFile | null = null,
 ): CorpusWorkingCopyFile {
   const changes: CorpusGeometryChange[] = [];
   const boardChanges: CorpusBoardGeometryChange[] = [];
   const boardAppearanceChanges: CorpusBoardAppearanceChange[] = [];
   const boardHolesChanges: CorpusBoardHolesChange[] = [];
   const elementIdentityChanges: CorpusElementIdentityChange[] = [];
+  const elementVariableChanges: CorpusElementVariablesChange[] = [];
 
   const visit = (originalItems: readonly CorpusS3dElement[], currentItems: readonly CorpusS3dElement[], parentPath: number[]) => {
     for (let index = 0; index < Math.min(originalItems.length, currentItems.length); index += 1) {
@@ -199,6 +226,9 @@ export function createCorpusWorkingCopyFile(
       const afterIdentity = elementIdentityOf(afterElement);
       if (JSON.stringify(beforeIdentity) !== JSON.stringify(afterIdentity)) {
         elementIdentityChanges.push({ path: [...parentPath, index], before: beforeIdentity, after: afterIdentity });
+      }
+      if (JSON.stringify(beforeElement.variables) !== JSON.stringify(afterElement.variables)) {
+        elementVariableChanges.push({ path: [...parentPath, index], before: { ...beforeElement.variables }, after: { ...afterElement.variables } });
       }
       for (let boardIndex = 0; boardIndex < Math.min(beforeElement.boards.length, afterElement.boards.length); boardIndex += 1) {
         const beforeBoard = boardGeometryOf(beforeElement.boards[boardIndex]!);
@@ -221,11 +251,11 @@ export function createCorpusWorkingCopyFile(
     }
   };
 
-  visit(original, current, []);
+  if (!standaloneE3d) visit(original, current, []);
   const roomChange = rooms && JSON.stringify(rooms.original) !== JSON.stringify(rooms.current)
     ? { before: { ...rooms.original }, after: { ...rooms.current } }
     : null;
-  return { format: "ivertim-corpus-working-copy", version: 7, sourceFile, exportedAt, changes, boardChanges, boardAppearanceChanges, boardHolesChanges, roomChange, elementIdentityChanges, imports: imports.map((item) => ({ ...item })) };
+  return { format: "ivertim-corpus-working-copy", version: 9, sourceFile, exportedAt, changes, boardChanges, boardAppearanceChanges, boardHolesChanges, roomChange, elementIdentityChanges, elementVariableChanges, imports: imports.map((item) => ({ ...item })), standaloneE3d: standaloneE3d ? { ...standaloneE3d } : null };
 }
 
 export function applyCorpusWorkingCopyFile(
@@ -241,13 +271,21 @@ export function applyCorpusWorkingCopyProject(
   elements: readonly CorpusS3dElement[],
   room: CorpusS3dRoom,
   value: unknown,
-): { elements: CorpusS3dElement[]; room: CorpusS3dRoom; importedE3dSources: Array<{ sourceFile: string; sourceXml: string; originalElement: CorpusS3dElement }> } {
-  if (!isWorkingCopyFile(value)) throw new Error("Fajl nije IVERTIM Corpus radna kopija podržane verzije (1–7).");
+): { elements: CorpusS3dElement[]; room: CorpusS3dRoom; importedE3dSources: Array<{ sourceFile: string; sourceXml: string; originalElement: CorpusS3dElement }>; standaloneE3dSource: { sourceFile: string; sourceXml: string; originalElement: CorpusS3dElement } | null } {
+  if (!isWorkingCopyFile(value)) throw new Error("Fajl nije IVERTIM Corpus radna kopija podržane verzije (1–9).");
   if (value.sourceFile.toLocaleLowerCase() !== sourceFile.toLocaleLowerCase()) {
     throw new Error(`Radna kopija pripada projektu ${value.sourceFile}, a otvoren je ${sourceFile}.`);
   }
 
+  let standaloneE3dSource: { sourceFile: string; sourceXml: string; originalElement: CorpusS3dElement } | null = null;
   let result = [...elements];
+  if (value.standaloneE3d) {
+    const inspection = parseCorpusE3d(value.standaloneE3d.sourceXml);
+    if (inspection.elements.length !== 1) throw new Error("Samostalna E3D radna kopija mora sadržati tačno jedan korijenski element.");
+    const originalElement = inspection.elements[0]!;
+    result = [originalElement];
+    standaloneE3dSource = { ...value.standaloneE3d, originalElement };
+  }
   for (const change of value.changes) {
     const target = corpusElementAtPath(result, change.path);
     if (!target) throw new Error(`Element na putanji ${change.path.join(".")} više ne postoji u projektu.`);
@@ -291,6 +329,14 @@ export function applyCorpusWorkingCopyProject(
     }
     result = updateCorpusElementIdentity(result, target, change.after).elements;
   }
+  for (const change of value.elementVariableChanges ?? []) {
+    const target = corpusElementAtPath(result, change.path);
+    if (!target) throw new Error(`Element na putanji ${change.path.join(".")} više ne postoji u projektu.`);
+    if (JSON.stringify(target.variables) !== JSON.stringify(change.before)) {
+      throw new Error(`Varijable elementa ${change.path.join(".")} se razlikuju od izvornog projekta.`);
+    }
+    result = updateCorpusElementVariables(result, target, change.after).elements;
+  }
   let nextRoom = room;
   if (value.roomChange) {
     if (JSON.stringify(room) !== JSON.stringify(value.roomChange.before)) {
@@ -305,16 +351,16 @@ export function applyCorpusWorkingCopyProject(
     result.push(originalElement);
     return { ...item, originalElement };
   });
-  return { elements: result, room: nextRoom, importedE3dSources };
+  return { elements: result, room: nextRoom, importedE3dSources, standaloneE3dSource };
 }
 
-type SupportedWorkingCopyFile = Omit<CorpusWorkingCopyFile, "version" | "boardChanges" | "boardAppearanceChanges" | "boardHolesChanges" | "roomChange" | "elementIdentityChanges" | "imports"> & { version: 1 | 2 | 3 | 4 | 5 | 6 | 7; boardChanges?: CorpusBoardGeometryChange[]; boardAppearanceChanges?: CorpusBoardAppearanceChange[]; boardHolesChanges?: CorpusBoardHolesChange[]; roomChange?: { before: RoomGeometryPatch; after: RoomGeometryPatch } | null; elementIdentityChanges?: CorpusElementIdentityChange[]; imports?: CorpusImportedElementFile[] };
+type SupportedWorkingCopyFile = Omit<CorpusWorkingCopyFile, "version" | "boardChanges" | "boardAppearanceChanges" | "boardHolesChanges" | "roomChange" | "elementIdentityChanges" | "elementVariableChanges" | "imports" | "standaloneE3d"> & { version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9; boardChanges?: CorpusBoardGeometryChange[]; boardAppearanceChanges?: CorpusBoardAppearanceChange[]; boardHolesChanges?: CorpusBoardHolesChange[]; roomChange?: { before: RoomGeometryPatch; after: RoomGeometryPatch } | null; elementIdentityChanges?: CorpusElementIdentityChange[]; elementVariableChanges?: CorpusElementVariablesChange[]; imports?: CorpusImportedElementFile[]; standaloneE3d?: CorpusImportedElementFile | null };
 
 function isWorkingCopyFile(value: unknown): value is SupportedWorkingCopyFile {
   if (!value || typeof value !== "object") return false;
   const file = value as Partial<SupportedWorkingCopyFile>;
   return file.format === "ivertim-corpus-working-copy"
-    && (file.version === 1 || file.version === 2 || file.version === 3 || file.version === 4 || file.version === 5 || file.version === 6 || file.version === 7)
+    && (file.version === 1 || file.version === 2 || file.version === 3 || file.version === 4 || file.version === 5 || file.version === 6 || file.version === 7 || file.version === 8 || file.version === 9)
     && typeof file.sourceFile === "string"
     && Array.isArray(file.changes)
     && file.changes.every((change) => {
@@ -331,7 +377,28 @@ function isWorkingCopyFile(value: unknown): value is SupportedWorkingCopyFile {
     && (file.version < 4 || file.roomChange === null || isRoomChange(file.roomChange))
     && (file.version < 5 || (Array.isArray(file.elementIdentityChanges) && file.elementIdentityChanges.every(isElementIdentityChange)))
     && (file.version < 6 || (Array.isArray(file.imports) && file.imports.every(isImportedElementFile)))
-    && (file.version < 7 || (Array.isArray(file.boardHolesChanges) && file.boardHolesChanges.every(isBoardHolesChange)));
+    && (file.version < 7 || (Array.isArray(file.boardHolesChanges) && file.boardHolesChanges.every(isBoardHolesChange)))
+    && (file.version < 8 || file.standaloneE3d === null || isImportedElementFile(file.standaloneE3d))
+    && (file.version < 9 || (Array.isArray(file.elementVariableChanges) && file.elementVariableChanges.every(isElementVariablesChange)));
+}
+
+function isElementVariablesChange(change: unknown): change is CorpusElementVariablesChange {
+  if (!change || typeof change !== "object") return false;
+  const value = change as Partial<CorpusElementVariablesChange>;
+  return Array.isArray(value.path)
+    && value.path.every((part) => Number.isInteger(part) && part >= 0)
+    && isElementVariablesPatch(value.before)
+    && isElementVariablesPatch(value.after)
+    && sameRecordKeys(value.before, value.after);
+}
+
+function isElementVariablesPatch(value: unknown): value is ElementVariablesPatch {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.entries(value).every(([name, expression]) => name.length > 0 && typeof expression === "string");
+}
+
+function sameRecordKeys(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
+  return JSON.stringify(Object.keys(left).sort()) === JSON.stringify(Object.keys(right).sort());
 }
 
 function isBoardHolesChange(change: unknown): change is CorpusBoardHolesChange {

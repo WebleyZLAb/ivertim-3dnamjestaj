@@ -10,6 +10,16 @@ export interface CorpusExpressionResult {
   unresolved: CorpusExpressionAssignment[];
 }
 
+export type CorpusAssignmentStatus = "resolved" | "invalid" | "missing" | "cycle" | "unresolved";
+
+export interface CorpusAssignmentAnalysis extends CorpusExpressionAssignment {
+  normalizedName: string;
+  dependencies: string[];
+  missing: string[];
+  status: CorpusAssignmentStatus;
+  value: CorpusExpressionValue | null;
+}
+
 type Node =
   | { kind: "literal"; value: CorpusExpressionValue }
   | { kind: "variable"; name: string }
@@ -64,6 +74,67 @@ export function evaluateCorpusAssignments(
     if (!progress) break;
   }
   return { values, unresolved };
+}
+
+/**
+ * Daje objašnjiv read-only pregled svake dodjele. Analiza razlikuje nepodržanu
+ * sintaksu, stvarno nedostajuća imena, ciklus i ostale nerješive izraze. Ne
+ * izvršava proizvoljan kod i ne pretpostavlja značenje nepoznatih funkcija.
+ */
+export function analyzeCorpusAssignments(
+  assignments: readonly CorpusExpressionAssignment[],
+  initialValues: Readonly<Record<string, CorpusExpressionValue>> = {},
+): CorpusAssignmentAnalysis[] {
+  const evaluated = evaluateCorpusAssignments(assignments, initialValues);
+  const initialNames = new Set(Object.keys(initialValues).map((name) => name.toUpperCase()));
+  const assignmentNames = new Set(assignments.map(({ name }) => name.toUpperCase()));
+  const unresolvedNames = new Set(evaluated.unresolved.map(({ name }) => name.toUpperCase()));
+  const dependenciesByName = new Map<string, string[]>();
+  for (const assignment of assignments) {
+    dependenciesByName.set(assignment.name.toUpperCase(), corpusExpressionDependencies(assignment.expression) ?? []);
+  }
+  const reachesSelf = (start: string, current: string, visited: Set<string>): boolean => {
+    if (visited.has(current)) return false;
+    visited.add(current);
+    for (const dependency of dependenciesByName.get(current) ?? []) {
+      if (!unresolvedNames.has(dependency)) continue;
+      if (dependency === start || reachesSelf(start, dependency, visited)) return true;
+    }
+    return false;
+  };
+
+  return assignments.map((assignment) => {
+    const normalizedName = assignment.name.toUpperCase();
+    const dependencies = corpusExpressionDependencies(assignment.expression);
+    const value = evaluated.values[normalizedName];
+    const missing = (dependencies ?? []).filter((name) => !assignmentNames.has(name) && !initialNames.has(name));
+    let status: CorpusAssignmentStatus;
+    if (dependencies === null) status = "invalid";
+    else if (value !== undefined) status = "resolved";
+    else if (missing.length) status = "missing";
+    else if (reachesSelf(normalizedName, normalizedName, new Set())) status = "cycle";
+    else status = "unresolved";
+    return { ...assignment, normalizedName, dependencies: dependencies ?? [], missing, status, value: value ?? null };
+  });
+}
+
+/** Vraća jedinstvene reference na varijable ili null za nepodržan izraz. */
+export function corpusExpressionDependencies(expression: string): string[] | null {
+  const root = parseCorpusExpression(expression);
+  if (!root || !hasSupportedOperations(root)) return null;
+  const dependencies: string[] = [];
+  const seen = new Set<string>();
+  const visit = (node: Node) => {
+    if (node.kind === "variable") {
+      if (!seen.has(node.name)) { seen.add(node.name); dependencies.push(node.name); }
+      return;
+    }
+    if (node.kind === "unary") return visit(node.value);
+    if (node.kind === "binary") { visit(node.left); visit(node.right); return; }
+    if (node.kind === "call") node.arguments.forEach(visit);
+  };
+  visit(root);
+  return dependencies;
 }
 
 function parseCorpusExpression(expression: string): Node | null {
