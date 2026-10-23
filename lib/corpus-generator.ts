@@ -21,8 +21,10 @@ export type CorpusCabinetSpec = {
   backType?: "panel" | "thin";
   backThickness?: number;
   backMaterialName?: string;
+  backMaterialUid?: string;
   backColor?: number;
   materialName: string;
+  materialUid?: string;
   color: number;
   frontCount?: number;
   frontLayout?: "doors" | "drawers";
@@ -31,6 +33,7 @@ export type CorpusCabinetSpec = {
   frontThickness?: number;
   frontGap?: number;
   frontMaterialName?: string;
+  frontMaterialUid?: string;
   frontColor?: number;
 };
 
@@ -53,7 +56,7 @@ export function generateCorpusCabinetE3d(spec: CorpusCabinetSpec): CorpusGenerat
   const shelfRearInset = spec.shelfRearInset ?? 0;
   const shelfDepth = spec.depth - shelfFrontInset - shelfRearInset;
   const topConstruction = spec.topConstruction ?? "full";
-  const boardAttributes = `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml(spec.materialName.trim())}" BOJA="${spec.color}"`;
+  const boardAttributes = `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml(spec.materialName.trim())}"${materialUidAttribute(spec.materialUid)} BOJA="${spec.color}"`;
   const boards: string[] = [
     board("Lijevi bok", 0, baseHeight, 0, bodyHeight, spec.depth, spec.thickness, 0, boardAttributes),
     board("Desni bok", spec.width - spec.thickness, baseHeight, 0, bodyHeight, spec.depth, spec.thickness, 0, boardAttributes),
@@ -85,7 +88,7 @@ export function generateCorpusCabinetE3d(spec: CorpusCabinetSpec): CorpusGenerat
     const backThickness = backType === "thin" ? (spec.backThickness ?? 3) : spec.thickness;
     const backZ = backType === "thin" ? -spec.depth : -(spec.depth - spec.thickness);
     const backAttributes = backType === "thin"
-      ? `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml((spec.backMaterialName ?? "HDF bijeli").trim())}" BOJA="${spec.backColor ?? 0xffffff}" TIPDASKE="8"`
+      ? `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml((spec.backMaterialName ?? "HDF bijeli").trim())}"${materialUidAttribute(spec.backMaterialUid)} BOJA="${spec.backColor ?? 0xffffff}" TIPDASKE="8"`
       : boardAttributes;
     boards.push(board("Leđa", spec.thickness, baseHeight + spec.thickness, backZ, innerHeight, innerWidth, backThickness, 1, backAttributes));
   }
@@ -105,7 +108,7 @@ export function generateCorpusCabinetE3d(spec: CorpusCabinetSpec): CorpusGenerat
     const availableSpan = (frontLayout === "drawers" ? frameHeight : frameWidth) - frontGap * (frontCount + 1);
     const weightTotal = spec.frontWeights?.reduce((sum, value) => sum + value, 0) ?? frontCount;
     const frontSpans = Array.from({ length: frontCount }, (_, index) => availableSpan * (spec.frontWeights?.[index] ?? 1) / weightTotal);
-    const frontAttributes = `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml((spec.frontMaterialName ?? spec.materialName).trim())}" BOJA="${spec.frontColor ?? spec.color}" TIPDASKE="1" TIPFRONTE="2"`;
+    const frontAttributes = `VISIBLE="true" PROZIRNO="false" MATNAME="${escapeXml((spec.frontMaterialName ?? spec.materialName).trim())}"${materialUidAttribute(spec.frontMaterialUid?.trim() || spec.materialUid)} BOJA="${spec.frontColor ?? spec.color}" TIPDASKE="1" TIPFRONTE="2"`;
     let spanOffset = 0;
     for (let index = 0; index < frontCount; index += 1) {
       if (frontLayout === "drawers") {
@@ -210,6 +213,11 @@ function validateSpec(spec: CorpusCabinetSpec) {
     if (frameWidth <= widthGap || frameHeight <= heightGap) throw new Error("Zazor je prevelik za zadane mjere fronte.");
     if (!Number.isInteger(frontColor) || frontColor < 0 || frontColor > 0xffffff) throw new Error("Boja fronte mora biti valjana 24-bitna vrijednost.");
   }
+}
+
+function materialUidAttribute(value: string | undefined): string {
+  const uid = value?.trim();
+  return uid ? ` MATUID="${escapeXml(uid)}"` : "";
 }
 
 function board(name: string, x: number, y: number, z: number, height: number, width: number, thickness: number, direction: number, shared: string): string {

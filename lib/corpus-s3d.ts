@@ -36,6 +36,8 @@ export interface CorpusS3dMacroLink {
 
 export interface CorpusS3dBoard {
   name: string;
+  boardType: number | null;
+  frontType: number | null;
   position: readonly [number | null, number | null, number | null];
   height: number | null;
   width: number | null;
@@ -308,6 +310,8 @@ function parseBoard(board: XmlRecord): CorpusS3dBoard {
 
   return {
     name: text(board["@_DNAME"]),
+    boardType: numeric(board["@_TIPDASKE"]),
+    frontType: numeric(board["@_TIPFRONTE"]),
     position: [numeric(board["@_DXPOS"]), numeric(board["@_DYPOS"]), numeric(board["@_DZPOS"])],
     height: numeric(board["@_VISINA"]),
     width: numeric(board["@_DUBINA"]),

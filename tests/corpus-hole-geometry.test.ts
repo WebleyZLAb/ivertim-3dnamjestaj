@@ -9,7 +9,7 @@ const hole = (overrides: Partial<CorpusS3dHole> = {}): CorpusS3dHole => ({
 });
 
 const board = (holes: CorpusS3dHole[]): CorpusS3dBoard => ({
-  name: "Polica", height: 560, width: 400, thickness: 18, direction: 2,
+  name: "Polica", boardType: null, frontType: null, height: 560, width: 400, thickness: 18, direction: 2,
   position: [0, 0, 0], angle: 0, xAngle: 0, zAngle: 0, materialUid: "", materialName: "",
   color: null, transparent: false, visible: true, curveData: null, curvePoints: [],
   curveIsApproximate: false, holeCount: holes.length, holes, consumables: [], unknownChildTags: [],

@@ -31,14 +31,24 @@ test("generisani E3D ulazi u prazan S3D bez gubitka strukture", () => {
 });
 
 test("generiše jednu ili dvije dokazano orijentisane fronte sa zazorom", () => {
-  const generated = generateCorpusCabinetE3d({ name: "Korpus sa frontama", code: "KF600", width: 600, height: 820, depth: 560, thickness: 18, shelfCount: 0, includeBack: false, materialName: "Bijela", color: 0xffffff, frontCount: 2, frontThickness: 19, frontGap: 2, frontMaterialName: "Hrast fronta", frontColor: 0x886644 });
+  const generated = generateCorpusCabinetE3d({ name: "Korpus sa frontama", code: "KF600", width: 600, height: 820, depth: 560, thickness: 18, shelfCount: 0, includeBack: false, materialName: "Bijela", materialUid: "MAT-BIJELA", color: 0xffffff, frontCount: 2, frontThickness: 19, frontGap: 2, frontMaterialName: "Hrast fronta", frontMaterialUid: "MAT-HRAST", frontColor: 0x886644 });
   const fronts = parseCorpusE3d(generated.sourceXml).elements[0]!.boards.filter(({ name }) => name.startsWith("Fronta"));
   assert.equal(fronts.length, 2);
+  assert.deepEqual(fronts.map(({ boardType, frontType }) => [boardType, frontType]), [[1, 2], [1, 2]]);
   assert.deepEqual(fronts.map(({ direction }) => direction), [1, 1]);
   assert.deepEqual(fronts.map(({ position }) => position), [[2, 2, 0], [301, 2, 0]]);
   assert.deepEqual(fronts.map(({ height, width, thickness }) => [height, width, thickness]), [[816, 297, 19], [816, 297, 19]]);
   assert.deepEqual(fronts.map(({ materialName, color }) => [materialName, color]), [["Hrast fronta", 0x886644], ["Hrast fronta", 0x886644]]);
+  assert.deepEqual(fronts.map(({ materialUid }) => materialUid), ["MAT-HRAST", "MAT-HRAST"]);
   assert.match(generated.sourceXml, /DNAME="Fronta 1"[^>]*TIPDASKE="1" TIPFRONTE="2"/);
+});
+
+test("fronta nasljeđuje MATUID korpusa kada poseban UID nije zadan", () => {
+  const generated = generateCorpusCabinetE3d({ name: "Korpus", code: "K600", width: 600, height: 720, depth: 560, thickness: 18, shelfCount: 0, includeBack: false, materialName: "Bijela", materialUid: "MAT&B-18", color: 0xffffff, frontCount: 1, frontMaterialName: "Bijela fronta", frontMaterialUid: "  " });
+  const element = parseCorpusE3d(generated.sourceXml).elements[0]!;
+  assert.equal(element.boards[0]!.materialUid, "MAT&B-18");
+  assert.equal(element.boards.find(({ frontType }) => frontType !== null)?.materialUid, "MAT&B-18");
+  assert.match(generated.sourceXml, /MATUID="MAT&amp;B-18"/);
 });
 
 test("generiše niz frontova ladica po visini korpusa", () => {
