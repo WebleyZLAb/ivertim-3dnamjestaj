@@ -3,3 +3,9 @@ coverage/
 dist/
 *.log
 
+
+# Lokalni snimci rada
+recordings/
+
+# Lokalne Windows precice sa apsolutnim putanjama
+*.lnk

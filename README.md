@@ -1,4 +1,4 @@
-# IVERTIM Corpus
+# Ivertim 3D
 
 Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaciju funkcija Corpus 3D softvera.
 
@@ -136,3 +136,36 @@ pnpm audit:materials "D:\sobasav" "D:\CorpusSolutions\elmtex"
 - Kroz-bušenja i slijepa bušenja na dokazanim suprotnim glavnim plohama `RPL=0/1` stvarne su šupljine u triangulisanoj geometriji; rijetki `RPL=2` i ostale nedokazane ravni ostaju cilindrični markeri.
 - `PTSTYLE=2` koristi kružni luk iz tetive i `PTARRA`; `PTSTYLE=1` ostaje kontrolisana interpolacija dok mu se ne potvrdi izvorna matematika.
 - Teksture materijala rade za jednoznačan tačan `MATUID`, ali Corpus UV orijentacija i realna skala/ponavljanje iz `TEXX/TEXY/TEXZ` još nisu dokazani. 3D/izvozna primjena utora, falca i ostalih CNC putanja nije rekonstruisana; PILA linije imaju samo dokazani read-only lokalni pregled.
+
+## Pokretanje na Windowsu
+
+Dvoklik na **`Pokreni-Ivertim-3D.vbs`** u folderu projekta — pokretanje bez CMD prozora. CMD pokretač ostaje dostupan za dijagnostiku.
+
+Loader je 700 × 528 px, sa Ivertim logom i paletom Srednji orah. Ostaje vidljiv najmanje dvije sekunde i čeka da radna površina bude spremna. Postojeća tema radne površine se zadržava.
+
+- Potreban je Node.js 22.12 ili noviji. Prvo pokretanje instalira pakete i traži internet; naredna pokretanja rade lokalno.
+- Pokretač sam napravi ili obnovi produkcijski build kada se izvorni fajlovi promijene.
+- Program se otvara u zasebnom desktop prozoru. Jedina naslovna traka je plava: desno su sistemska dugmad za smanjivanje, uvećavanje/vraćanje i zatvaranje. Povlačenje plave trake pomjera prozor; dvoklik ga uvećava ili vraća.
+- Lokalni server radi na `http://127.0.0.1:4317` samo na ovom računaru. Nije potrebno ručno upisivati adresu. Ponovni dvoklik koristi postojeći server.
+- Zatvaranje prozora zatvara prikaz; mali lokalni server ostaje aktivan do gašenja računara. Radnu kopiju sačuvaj dugmetom **Sačuvaj kopiju**, a Corpus fajl preko **Izvezi S3D/E3D**.
+- Ako pokretanje ne uspije, CMD ostaje otvoren sa porukom. Dodatni zapis je u lokalnim `corpus-server.log` i `corpus-server-error.log` (ne ulaze u Git).
+
+Glavni radni ekran ima scenu, bočne alatke, stablo projekta i svojstva desno. Mjere i položaj izabranog elementa primjenjuju se iz panela **Svojstva**, uz Undo/Redo. Detaljan editor otvara se dvoklikom u sceni ili dugmetom **Uredi element**. Njegova dalja razrada slijedi nakon posebnog snimka.
+
+Biblioteka se otvara dugmetom **Biblioteka**: pri prvom ulasku izaberi lokalni Elmsav folder. Lijevo su folderi, u sredini fajlovi i pretraga njihovih putanja, a desno 3D pregled i izvorne mjere. Izbor i okretanje pregleda ne mijenjaju projekat; tek **Dodaj u projekat** ubacuje element. Neispravni E3D fajlovi prikazuju grešku i ne mogu se dodati. Dodavanje se može poništiti komandom Undo. Izvorne mjere u pregledu su informativne; uređivanje slijedi nakon dodavanja.
+
+## Corpus radna površina
+
+Pokretanje sada ide kroz loader koji učitava lokalnu istoriju i oporavak, pa prikazuje radnu površinu. Početni prozor ima **Novi projekat**, **Učitaj projekat**, **Odustani** i do deset nedavnih projekata. Nedavni projekti su lokalne kopije posljednjeg učitanog S3D/E3D sadržaja u pregledniku, a ne direktne veze na fajlove na disku. Nesnimljene izmjene imaju odvojeni oporavak sesije.
+
+Gore su padajući meniji i zasebna alatna traka, lijevo dodatne alatke, desno tabovi **Elementi**, **Soba** i **Svojstva**. Tabove možeš mijenjati i strelicama lijevo/desno; mjere u tabu Soba unose se u milimetrima. Detaljan prozor postavki zadržava ranije jedinice u metrima.
+
+Biblioteka, proizvodne liste, postavke, pomoć i postojeći obrasci otvaraju se kao prozori iznad scene. Povuci naslovnu traku da pomjeriš prozor; dvoklik ili dugme □ ga uvećava. Dugme ― ga smanjuje na donju traku, odakle ga možeš vratiti. Prozor možeš razvlačiti za donji desni ugao. Escape zatvara prozor u kojem je fokus. Otvoreni prozori ne zamjenjuju projekat i scena ostaje u pozadini.
+
+Detaljan editor elemenata je zadržan, a njegova dalja razrada je odložena dok se ne potvrdi glavno okruženje prema Corpus snimku.
+
+Meniji podržavaju tastaturu: strelice gore/dolje biraju komandu, lijevo/desno mijenjaju meni, Home/End biraju prvu/posljednju dostupnu komandu, a Escape zatvara meni. Prozori zadržavaju redoslijed preklapanja i ostaju unutar radne površine pri pomjeranju.
+
+## Jezik interfejsa
+
+Osnovni jezik je srpski, latinica i ijekavica. Datumi i brojevi koriste srpski lokalitet. Engleski i drugi jezici biće dodati kasnije prema potrebi; trenutno nema izbora jezika. Izvorni nazivi materijala, elemenata i Corpus polja zadržavaju se pri uvozu.

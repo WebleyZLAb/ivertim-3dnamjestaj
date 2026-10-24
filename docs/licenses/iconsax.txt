@@ -1,0 +1,3 @@
+Iconsax artwork © Iconsax. Source: official iconsax npm package 0.1.1, https://github.com/iconsax/iconsax-npm and https://iconsax.io . Package metadata declares MIT. Official service usage rules: https://docs.iconsax.io/license-and-terms/license .
+
+Only the selected free icons are incorporated as application code, not distributed as a standalone icon library. Iconsax retains authorship. Adaptations: currentColor, scoped SVG identifiers. Linear, Twotone and Bulk variants are from the same official set.
