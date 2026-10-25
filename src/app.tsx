@@ -2944,7 +2944,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   }
 
   return (
-    <div className="detail-content element-editor corpus-element-editor">
+    <div className="detail-content element-editor corpus-element-editor" onKeyDownCapture={event => { if (event.key === "Escape" && (editorTab === "curves" || editorTab === "operations" || editorTab === "views")) { event.preventDefault(); event.stopPropagation(); setEditorTab("basic"); } }}>
       <nav className="element-editor-tabs" aria-label="Grupe funkcija elementa">
         <button aria-current={editorTab === "basic" ? "page" : undefined} className={editorTab === "basic" ? "active" : ""} onClick={() => setEditorTab("basic")}>Osnovni</button>
         <button aria-current={editorTab === "construction" ? "page" : undefined} className={editorTab === "construction" ? "active" : ""} onClick={() => setEditorTab("construction")}>Dodavanje</button>
@@ -2961,11 +2961,11 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
         canEdit={canEdit} canChangeStructure={canChangeStructure} canUndo={canUndo} onUndo={onUndo}
         onAdd={() => setBoardCreatorOpen(true)} onMove={onMoveBoard} onRemove={onRemoveBoard}
         variables={<ElementVariablesEditor element={element} canEdit={canEdit} canChangeStructure={canChangeStructure} onUpdate={onUpdateVariables} />}
-        identity={<ElementIdentityEditor element={element} onUpdate={onUpdateIdentity} />}>
-      {editorTab === "views" && <section className="data-section"><div className="section-title"><h3>Pogledi elementa</h3></div><p>Izaberi 3D, sprijeda, bočno ili odozgo u traci alata. Točkić zumira; povlačenje okreće pogled. „Uklopi“ vraća cijeli element u kadar.</p><p>Sakrivanje fronti i žičani prikaz važe samo za ovaj pregled.</p></section>}
-      {editorTab === "curves" && <section className="data-section"><div className="section-title"><h3>Kontura ploče</h3><button className="secondary-button" onClick={() => setEditorTab("basic")}>Završi uređivanje konture</button></div>{selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <BoardContourEditor board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} onUpdate={onUpdateBoardContour} canChange={canChangeStructure} /> : <p>Izaberi ploču u stablu ili 3D prikazu da urediš konturu.</p>}</section>}
-      {editorTab === "basic" && canEdit && selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <BoardGeometryEditor compact element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onRename={onRenameBoard} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} /> : null}
-      {editorTab === "basic" && selectedBoardIndex === null && <><div className="property-grid">
+        toolTitle={{ basic: "Osnovni", placement: "Uređivanje", construction: "Dodavanje", materials: "Materijali", variables: "Varijable", operations: "Bušenje", production: "Proizvodnja", advanced: "Napredno", curves: "Krivulje", views: "Pogledi" }[editorTab]}
+        toolsOpen={editorTab !== "basic"} onCloseTools={() => setEditorTab("basic")}
+        properties={<>
+      {canEdit && selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <BoardGeometryEditor compact element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onRename={onRenameBoard} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} /> : null}
+      {selectedBoardIndex === null && <><div className="property-grid">
         <Property label="Širina" value={formatMillimeters(element.width)} />
         <Property label="Visina" value={formatMillimeters(element.height)} />
         <Property label="Dubina" value={formatMillimeters(element.depth)} />
@@ -2976,6 +2976,12 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
 
       <ElementGeometryEditor element={element} canEdit={canEdit} onUpdate={onUpdate} onFitToBoards={onFitToBoards} onUndo={onUndo} onRemoveImported={onRemoveImported} onDuplicateImported={onDuplicateImported} onExportSelectedE3d={onExportSelectedE3d} canRemoveImported={canRemoveImported} canExportE3d={canExportE3d} canDuplicate={canDuplicate} canUndo={canUndo} />
       <ElementIdentityEditor element={element} onUpdate={onUpdateIdentity} /></>}
+        {!canEdit && selectedBoardIndex !== null && <p>Element je zaključan. Otključaj ga u svojstvima elementa za uređivanje ploče.</p>}
+        </>}
+        identity={<ElementIdentityEditor element={element} onUpdate={onUpdateIdentity} />}>
+
+      {editorTab === "views" && <section className="data-section"><div className="section-title"><h3>Pogledi elementa</h3></div><p>Izaberi 3D, sprijeda, bočno ili odozgo u traci alata. Točkić zumira; povlačenje okreće pogled. „Uklopi“ vraća cijeli element u kadar.</p><p>Sakrivanje fronti i žičani prikaz važe samo za ovaj pregled.</p></section>}
+      {editorTab === "curves" && <section className="data-section"><div className="section-title"><h3>Kontura ploče</h3><button className="secondary-button" onClick={() => setEditorTab("basic")}>Završi uređivanje konture</button></div>{selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <BoardContourEditor board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} onUpdate={onUpdateBoardContour} canChange={canChangeStructure} /> : <p>Izaberi ploču u stablu ili 3D prikazu da urediš konturu.</p>}</section>}
       {editorTab === "placement" && <>
       {groupSelection.length > 0 && <GroupTransformEditor count={groupSelection.length} bounds={groupBounds} roomClearances={groupRoomClearances} canTransform={canTransformGroup} onTranslate={onTranslateGroup} onPosition={onPositionGroup} onAlign={onAlignGroup} onDistribute={onDistributeGroup} onSpace={onSpaceGroup} onRotate={onRotateGroup} onContain={onContainGroup} onCenter={onCenterGroup} onPlaceAtRoomSide={onPlaceGroupAtRoomSide} onSnap={onSnapGroup} onDuplicate={onDuplicateGroup} onDuplicateGrid={onDuplicateGroupGrid} onRemove={onRemoveGroup} canRemove={canRemoveGroup} onSetVisibility={onSetGroupVisibility} onIsolate={onIsolateGroup} onShowAll={onShowAllRoots} onClear={onClearGroup} />}
       {canEdit ? <ElementPlacementEditor element={element} room={room} elements={placementElements} onUpdate={onUpdate} /> : <section className="data-section locked-editor-notice"><div className="section-title"><h3>Precizno postavljanje</h3><span>zaštićeno</span></div><p>Corpus element je zaključan ili označen kao neurediv. Otključaj ga u odjeljku „Identitet i stanje“ da bi promijenio geometriju, ploče ili bušenja.</p></section>}

@@ -56,3 +56,29 @@ test('dodane police prolaze E3D izvoz i ponovno učitavanje sa krojnom listom i 
   assert.ok(shelves.every(board => board.materialName === 'Iveral' && board.visible === true));
   assert.equal(buildCorpusCutList([reloaded]).skippedBoards, 0);
 });
+
+import { estimateCorpusPanelOpening } from "../lib/corpus-panel-array.ts";
+
+test('procjena otvora poštuje coklu i unutrašnju ravan leđa umjesto spoljne dubine', () => {
+  const generated = generateCorpusCabinetE3d({ name: 'Donji', code: 'D818', width: 818, height: 820, depth: 320, thickness: 18, shelfCount: 0, baseHeight: 100, includePlinth: true, includeBack: true, frontCount: 1, materialName: 'Bijela', color: 0xffffff });
+  const element = parseCorpusE3d(generated.sourceXml).elements[0]!;
+  const opening = estimateCorpusPanelOpening(element, 18);
+  assert.deepEqual(opening, { x: 18, y: 118, z: 0, width: 782, height: 684, depth: 302 });
+  const shelves = corpusPanelArray({ ...spec, opening }, element.boards[0]);
+  assert.ok(shelves.every(board => -board.position[2] + board.width === 302));
+});
+
+test('tanka leđa iza korpusa ne smanjuju otvor i fronta se ne zamijeni za leđa', () => {
+  const generated = generateCorpusCabinetE3d({ name: 'Viseći', code: 'G818', width: 818, height: 720, depth: 320, thickness: 18, shelfCount: 0, includeBack: true, backType: 'thin', backThickness: 3, frontCount: 2, materialName: 'Bijela', color: 0xffffff });
+  const element = parseCorpusE3d(generated.sourceXml).elements[0]!;
+  assert.equal(estimateCorpusPanelOpening(element, 18).depth, 320);
+});
+
+test('rotirana ploča ne postaje granica pravougaonog otvora', () => {
+  const generated = generateCorpusCabinetE3d({ name: 'Korpus', code: 'K818', width: 818, height: 720, depth: 320, thickness: 18, shelfCount: 0, includeBack: false, materialName: 'Bijela', color: 0xffffff });
+  const element = parseCorpusE3d(generated.sourceXml).elements[0]!;
+  const rotated = { ...element.boards[0]!, position: [-500, 0, 0] as const, xAngle: 45 };
+  const opening = estimateCorpusPanelOpening({ ...element, boards: [...element.boards, rotated] }, 18);
+  assert.equal(opening.x, 18);
+  assert.equal(opening.width, 782);
+});

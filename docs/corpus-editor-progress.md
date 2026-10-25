@@ -28,3 +28,23 @@ Korisnik je odobrio početak editora prema oba snimka, zatim izričito commit/pu
 5. Približiti kontekstualnu traku i stalna donja svojstva snimku; potvrditi PD, tipove, fiksne police i makro ravni prije implementacije.
 
 Izvori: `docs/corpus-editor-recording-guide.md`, `docs/corpus-workflow-map.md`; snimci/transkripti su lokalni u ignorisanom `recordings/` folderu. Nema potrebe tražiti cijeli novi video za već pokrivene radnje.
+
+## Provjere poslije checkpointa 7269213
+
+Posljednji build vizuelno potvrđen: vrh editora/tabovi više nisu prekriveni. Na korpusu 818×720×320 s unutrašnjim leđima procijenjena dubina otvora je 302 mm. Četiri ručne police na lokalnim Y140/280/420/560 imaju 782×282×18 mm i Z=-20, pa dosežu ravan leđa bez preklapanja. Undo vraća šest ploča, Redo deset. Fronta ostaje sa visible=true iako je lokalno skrivena.
+
+UI izvoz kroz „Sačuvaj element kao E3D“ napravio je `C:\Users\Korisnik\Downloads\K600-IVERTIM.E3D` (6065 B). Direktno ponovno parsiranje tog stvarnog izlaznog fajla potvrđuje 10 ploča, sve četiri visine, mjere, materijal Bijela i vidljivu frontu. Pokušaj ponovnog učitavanja kroz UI zastao je pri filechooser/confirm dijalogu (CDP timeout); ne proglašavati browser dio ponovnog učitavanja završenim. Tab 1 može biti blokiran tim dijalogom; ne ponavljati naslijepo uvoz niti mijenjati korisničke podatke radi otklanjanja. Prvo provjeriti/rešiti dijalog kroz podržani browser UI ili koristiti novi probni tab.
+
+Na kraju ovog nastavka limit je 98% potrošen. Zakazan jednokratni nastavak 20:15 u ovom chatu. Kod nakon checkpointa nije mijenjan; samo ova bilješka je nova i necommitovana. Sljedeće su završetak UI E3D kruga, probne pregrade, stabilna donja traka i dokazivanje parametarskih izraza.
+
+## Automatski nastavak u 20:15
+
+Limit je resetovan (0% na početku). Pročitan kontekst, log i stanje repoa. Dodan Escape izlaz iz tabova Krivulje/Bušenje/Pogledi u Osnovni, bez zatvaranja cijelog editora; Prihvati/Odustani su sticky pri skrolovanju desnog panela. Procjena otvora izdvojena u testiranu funkciju; sada odbacuje i X/Z rotirane ploče kao granice pravougaonog otvora. Novi regresioni testovi pokrivaju coklu, unutrašnja leđa, HDF iza korpusa i rotirane ploče. Build i 228/228 testova prolaze.
+
+Browser automatizacija i dalje ne može pouzdano završiti lokalni file chooser; čak klik na recent u novom probnom tabu nije promijenio stanje. Nije potvrđena nova Escape/sticky provjera u živom UI-u. Ne ponavljati istu radnju naslijepo. Sljedeće: prvo otkloniti otvoreni dijalog/picker u IAB-u ili ručno probati desktop program, zatim završiti UI krug. Nijedan novi commit/push nije rađen.
+
+## Nastavak 25.10.2026. — stalna svojstva ploče
+
+Donji panel geometrije odvojen je od alata aktivnog taba. Položaj/mjere izabrane ploče ostaju prikazani i tokom Dodavanja, Materijala, Bušenja i Krivulja; alatke aktivnog taba su u desnom panelu uz stablo, sa zasebnim skrolom i povratkom na Osnovni. Izbor ploče nakon komande promjene redoslijeda sada postavlja samo uspješan model update, pa odustajanje od potvrde više ne pomjera izbor.
+
+Build/typecheck i 228 testova prolaze. Nova vizuelna provjera nije potvrđena: IAB tab 1 i dalje vraća timeout pri aktivaciji fokusa; podržani getJsDialog nije našao aktivan JS dijalog. Nije rađen novi naslijepi uvoz, reset podataka niti zaobilaženje browser kontrola. Sljedeće: vizuelna provjera rasporeda u desktop programu, završetak praktičnog E3D UI kruga i dokazivanje zapisa parametarskih izraza. Nema novog commit/pusha.

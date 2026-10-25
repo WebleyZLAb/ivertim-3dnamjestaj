@@ -1,25 +1,18 @@
 import { useMemo, useState } from "react";
 import type { CorpusS3dElement } from "../lib/corpus-s3d";
 import type { CorpusNewBoardSpec } from "../lib/corpus-s3d-writer";
-import { corpusPanelArray, type CorpusPanelArraySpec } from "../lib/corpus-panel-array";
+import { corpusPanelArray, estimateCorpusPanelOpening, type CorpusPanelArraySpec } from "../lib/corpus-panel-array";
 import { Icon } from "./iconsax";
 
 export function PanelArrayEditor({ element, canEdit, onCreate }: { element: CorpusS3dElement; canEdit: boolean; onCreate(boards: readonly CorpusNewBoardSpec[]): boolean }) {
   const template = element.boards.find(board => board.direction === 2) ?? element.boards[0];
   const initialThickness = template?.thickness ?? 18;
-  const sides = element.boards.filter(board => board.direction === 0 && !board.angle && board.position[0] !== null && board.thickness !== null).sort((a, b) => a.position[0]! - b.position[0]!);
-  const horizontals = element.boards.filter(board => board.direction === 2 && !board.angle && board.position[1] !== null && board.thickness !== null).sort((a, b) => a.position[1]! - b.position[1]!);
-  const initialX = sides.length >= 2 ? sides[0]!.position[0]! + sides[0]!.thickness! : initialThickness;
-  const initialRight = sides.length >= 2 ? sides.at(-1)!.position[0]! : (element.width ?? 600) - initialThickness;
-  const initialY = horizontals.length >= 2 ? horizontals[0]!.position[1]! + horizontals[0]!.thickness! : initialThickness;
-  const initialTop = horizontals.length >= 2 ? horizontals.at(-1)!.position[1]! : (element.height ?? 720) - initialThickness;
-  const rearPlanes = element.boards.filter(board => board.direction === 1 && !board.angle && !board.xAngle && !board.zAngle && board.position[2] !== null && -board.position[2] > (element.depth ?? 320) / 2).map(board => -board.position[2]!);
-  const initialDepth = Math.min(element.depth ?? 320, ...rearPlanes);
+  const initialOpening = estimateCorpusPanelOpening(element, initialThickness);
   const [kind, setKind] = useState<CorpusPanelArraySpec['kind']>('shelves');
   const [count, setCount] = useState('4');
   const [thickness, setThickness] = useState(String(initialThickness));
   const [frontInset, setFrontInset] = useState('20');
-  const [opening, setOpening] = useState({ x: String(initialX), y: String(initialY), z: '0', width: String(Math.max(1, initialRight - initialX)), height: String(Math.max(1, initialTop - initialY)), depth: String(initialDepth) });
+  const [opening, setOpening] = useState(() => Object.fromEntries(Object.entries(initialOpening).map(([key, value]) => [key, String(value)])) as Record<keyof CorpusPanelArraySpec['opening'], string>);
   const [custom, setCustom] = useState(false);
   const [offsets, setOffsets] = useState<string[]>([]);
   const [message, setMessage] = useState('');

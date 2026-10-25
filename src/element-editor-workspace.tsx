@@ -5,7 +5,8 @@ import { Icon } from "./iconsax";
 const Preview = lazy(() => import("./room-3d").then(module => ({ default: module.Element3DPreview })));
 export type ElementPreviewView = "perspective" | "front" | "side" | "top";
 
-export function ElementEditorWorkspace({ element, selectedBoardIndex, onSelectBoard, canEdit, canChangeStructure, canUndo, onUndo, onAdd, onMove, onRemove, variables, identity, children, onAccept, onCancel, canRedo, onRedo }: {
+export function ElementEditorWorkspace({ element, selectedBoardIndex, onSelectBoard, canEdit, canChangeStructure, canUndo, onUndo, onAdd, onMove, onRemove, variables, identity, children, onAccept, onCancel, canRedo, onRedo, properties, toolsOpen, toolTitle, onCloseTools }: {
+  properties: ReactNode; toolsOpen: boolean; toolTitle: string; onCloseTools(): void;
   canRedo: boolean; onRedo(): void;
   onAccept(): void; onCancel(): void;
   element: CorpusS3dElement; selectedBoardIndex: number | null; onSelectBoard(index: number | null): void;
@@ -23,7 +24,7 @@ export function ElementEditorWorkspace({ element, selectedBoardIndex, onSelectBo
   const hiddenBoardIndexes = element.boards.flatMap((board, index) => hideFronts && board.frontType !== null ? [index] : []);
   const active = selectedBoardIndex === null ? null : element.boards[selectedBoardIndex];
   const changeView = (next: ElementPreviewView) => { setView(next); setViewRevision(value => value + 1); };
-  const move = (offset: -1 | 1) => { if (selectedBoardIndex === null) return; const target = selectedBoardIndex + offset; if (target < 0 || target >= element.boards.length) return; onMove(selectedBoardIndex, offset); onSelectBoard(target); };
+  const move = (offset: -1 | 1) => { if (selectedBoardIndex === null) return; const target = selectedBoardIndex + offset; if (target < 0 || target >= element.boards.length) return; onMove(selectedBoardIndex, offset); };
   return <div onKeyDown={event => {
     if (event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName))) return;
     if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
@@ -54,10 +55,14 @@ export function ElementEditorWorkspace({ element, selectedBoardIndex, onSelectBo
         const current = items.indexOf(event.target as HTMLButtonElement); const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)));
         items[next]?.focus(); onSelectBoard(next === 0 ? null : next - 1);
       }}><button role="treeitem" aria-selected={selectedBoardIndex === null} onClick={() => onSelectBoard(null)} className={selectedBoardIndex === null ? 'active' : ''}><Icon name="room" variant="bulk" size={16} /><strong>{element.name || "Element"}</strong></button>{element.boards.map((board, index) => <button key={index} role="treeitem" aria-level={2} aria-selected={selectedBoardIndex === index} className={selectedBoardIndex === index ? 'active' : ''} onClick={() => onSelectBoard(index)}><Icon name="drawing" variant={selectedBoardIndex === index ? 'bulk' : 'twotone'} size={16} /><span>{board.name || `Ploča ${index + 1}`}</span><small>{board.visible === false ? 'skrivena' : ''}</small></button>)}</div>
+      {toolsOpen && <section className="corpus-editor-tool-panel" aria-label={`Alati: ${toolTitle}`}>
+        <header><strong>{toolTitle}</strong><button aria-label="Zatvori alate i vrati Osnovni tab" onClick={onCloseTools}><Icon name="cancel" size={16} /></button></header>
+        <div className="corpus-editor-tool-content">{children}</div>
+      </section>}
       <details className="editor-element-properties"><summary>Svojstva elementa</summary>{identity}</details>
       <section className="editor-variables-panel">{variables}</section>
     </aside>
     <div role="separator" aria-label="Visina svojstava ploče" aria-orientation="horizontal" tabIndex={0} aria-valuemin={150} aria-valuemax={480} aria-valuenow={bottomHeight} className="editor-bottom-split" onKeyDown={event => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setBottomHeight(value => Math.max(150, Math.min(480, value + (event.key === 'ArrowUp' ? 20 : -20)))); } }} onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const rect = rootRef.current?.getBoundingClientRect(); if (rect) setBottomHeight(Math.max(150, Math.min(rect.height - 180, rect.bottom - event.clientY))); }} onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)} />
-    <section className="corpus-editor-properties" aria-label="Svojstva i alati izabrane ploče">{children}</section>
+    <section className="corpus-editor-properties" aria-label="Svojstva izabrane ploče">{properties}</section>
   </div>;
 }

@@ -121,3 +121,16 @@
 .panel-array-positions { display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px; }.panel-array-positions label { width:105px;position:relative; }.panel-array-positions small { position:absolute;right:6px;bottom:7px;font-size:9px; }.panel-array-positions input { padding-right:23px; }.panel-array-positions input[readonly] { background:#eaf2f7; }
 .panel-array-editor > .primary-button { display:flex;align-items:center;gap:6px; }
 .desktop-window-host:has(.desktop-element-window:not([style*="display: none"])) { z-index:110; }
+/* Accept/cancel remain reachable while scrolling a long element inspector. */
+.corpus-editor-inspector .editor-accept-actions { position:sticky;top:0;z-index:5; }
+.corpus-editor-tool-panel { border-bottom:1px solid #a6bfce;background:#f3f7fa; }
+.corpus-editor-tool-panel > header { display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:#d5e5ef;color:#375f79; }
+.corpus-editor-tool-panel > header button { display:flex;padding:3px;border:1px solid #adc5d4;background:#edf5fa;border-radius:2px;color:#456c86; }
+.corpus-editor-tool-content { max-height:48vh;overflow:auto;overscroll-behavior:contain;padding:7px; }
+.corpus-editor-tool-content .data-section { padding:5px;margin:0; }
+.corpus-editor-tool-content .geometry-fields,.corpus-editor-tool-content .panel-array-main-fields,.corpus-editor-tool-content .panel-array-opening,.corpus-editor-tool-content .appearance-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.corpus-editor-tool-content .section-title,.corpus-editor-tool-content .geometry-actions { flex-wrap:wrap; }
+.corpus-editor-tool-content .board-table-wrap { max-width:100%;overflow:auto; }
+.corpus-editor-tool-content .primary-button,.corpus-editor-tool-content .secondary-button { padding:6px 8px;font-size:10px; }
+.corpus-editor-tool-content input,.corpus-editor-tool-content select { max-width:100%; }
+.corpus-editor-tool-content .panel-array-positions label { width:calc(50% - 4px); }

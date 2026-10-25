@@ -1,4 +1,4 @@
-import type { CorpusS3dBoard } from "./corpus-s3d.ts";
+import type { CorpusS3dBoard, CorpusS3dElement } from "./corpus-s3d.ts";
 import type { CorpusNewBoardSpec } from "./corpus-s3d-writer.ts";
 
 export type CorpusPanelArraySpec = {
@@ -37,4 +37,18 @@ export function corpusPanelArray(spec: CorpusPanelArraySpec, template?: CorpusS3
     materialName: template?.materialName ?? "", materialUid: template?.materialUid ?? "",
     color: template?.color ?? 0xd8d1c1, transparent: template?.transparent ?? false, visible: true,
   }));
+}
+
+/** Conservative estimate for orthogonal cabinets; the editor keeps all opening fields editable. */
+export function estimateCorpusPanelOpening(element: CorpusS3dElement, thickness: number): CorpusPanelArraySpec['opening'] {
+  const straight = (board: CorpusS3dBoard) => !board.angle && !board.xAngle && !board.zAngle;
+  const sides = element.boards.filter(board => straight(board) && board.direction === 0 && board.position[0] !== null && board.thickness !== null).sort((a, b) => a.position[0]! - b.position[0]!);
+  const horizontals = element.boards.filter(board => straight(board) && board.direction === 2 && board.position[1] !== null && board.thickness !== null).sort((a, b) => a.position[1]! - b.position[1]!);
+  const x = sides.length >= 2 ? sides[0]!.position[0]! + sides[0]!.thickness! : thickness;
+  const right = sides.length >= 2 ? sides.at(-1)!.position[0]! : (element.width ?? 600) - thickness;
+  const y = horizontals.length >= 2 ? horizontals[0]!.position[1]! + horizontals[0]!.thickness! : thickness;
+  const top = horizontals.length >= 2 ? horizontals.at(-1)!.position[1]! : (element.height ?? 720) - thickness;
+  const depth = element.depth ?? 320;
+  const rearPlanes = element.boards.filter(board => straight(board) && board.direction === 1 && board.position[2] !== null && -board.position[2] > depth / 2).map(board => -board.position[2]!);
+  return { x, y, z: 0, width: Math.max(1, right - x), height: Math.max(1, top - y), depth: Math.min(depth, ...rearPlanes) };
 }
