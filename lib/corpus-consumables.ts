@@ -14,7 +14,7 @@ export type CorpusConsumableItem = {
   sources: readonly string[];
 };
 
-export function buildCorpusConsumablesList(elements: readonly CorpusS3dElement[]): CorpusConsumableItem[] {
+export function buildCorpusConsumablesList(elements: readonly CorpusS3dElement[], options: { includeHidden?: boolean } = {}): CorpusConsumableItem[] {
   const groups = new Map<string, Omit<CorpusConsumableItem, "sources" | "sideApplications"> & { sources: Set<string>; sideApplications: [number, number, number, number] }>();
   const add = (item: CorpusS3dConsumable, source: string) => {
     const key = JSON.stringify([item.type, item.uid, item.designation, item.name, item.materialUid, item.materialName]);
@@ -40,10 +40,12 @@ export function buildCorpusConsumablesList(elements: readonly CorpusS3dElement[]
   };
   const visit = (items: readonly CorpusS3dElement[], parentPath: string) => {
     items.forEach((element, elementIndex) => {
+      if (element.visible === false && !options.includeHidden) return;
       const label = element.name || element.code || `Element ${elementIndex + 1}`;
       const path = parentPath ? `${parentPath} / ${label}` : label;
       element.consumables.forEach((item) => add(item, path));
       element.boards.forEach((board, boardIndex) => {
+        if (board.visible === false && !options.includeHidden) return;
         const boardLabel = board.name || `Ploča ${boardIndex + 1}`;
         board.consumables.forEach((item) => add(item, `${path}: ${boardLabel}`));
       });

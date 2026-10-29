@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import { decodeCorpusText } from "../lib/corpus-macro.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables } from "../lib/corpus-model.ts";
+import { applyCorpusWorkingCopyFile, createCorpusWorkingCopyFile, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables } from "../lib/corpus-model.ts";
 import { parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
 import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dGeometryCopy, writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
 
@@ -393,4 +395,120 @@ test("zamjenjuje samo rubne POTITEM zapise i čuva ostali potrošni materijal", 
   const remaining = parseCorpusE3d(removed).elements[0]?.boards[0]?.consumables ?? [];
   assert.deepEqual(remaining.map(({ type, name }) => [type, name]), [["1", "Okov"]]);
   assert.match(removed, /COUNT="1"/);
+});
+
+
+test("opis i višeredna napomena pod-elementa prežive E3D izvoz bez gubitka drugih blokova", () => {
+  const xml=`<ELEMENTFILE VER="17"><ELEMENT ENAME="Korpus" ESIFRA="K" ECLAS="TElement" EVISIBLE="true" EEDITABLE="true" ELOCKED="false" EOPIS="Izvorni opis"><ELMLIST><ELM ENAME="Fronta" ESIFRA="F" ECLAS="TfrontaElement" EVISIBLE="true" EEDITABLE="true" ELOCKED="false" CUSTOM="ostaje"><DASKE/><NEPOZNATO PODATAK="123"/></ELM></ELMLIST></ELEMENT></ELEMENTFILE>`;
+  const before=parseCorpusE3d(xml);const target=before.elements[0]!.children[0]!;
+  const description='Fronta & "uzorak" <A>';
+  const note='Prvi red\nDrugi red\t18 mm\r\nKraj; doslovno &#10; i &lt;';
+  const after=updateCorpusElementIdentity(before.elements,target,{name:target.name,code:target.code,className:target.className,visible:target.visible,editable:target.editable,locked:target.locked,description,note});
+  const exported=writeCorpusE3dGeometryCopy(xml,before.elements,after.elements);
+  const result=parseCorpusE3d(exported);
+  assert.equal(result.elements[0]!.description,'Izvorni opis');
+  assert.equal(result.elements[0]!.children[0]!.description,description);
+  assert.equal(result.elements[0]!.children[0]!.note,note);
+  assert.match(exported,/&#10;/);assert.match(exported,/&#9;/);assert.match(exported,/CUSTOM="ostaje"/);assert.match(exported,/<NEPOZNATO PODATAK="123"\/>/);
+  assert.equal(writeCorpusE3dGeometryCopy(exported,result.elements,result.elements),exported);
+});
+
+test("izmjena naziva ne prepisuje izvorno kodiranje neizmijenjene napomene",()=>{
+ const xml=`<ELEMENTFILE><ELEMENT ENAME="A" ESIFRA="" ECLAS="TElement" EVISIBLE="true" EEDITABLE="true" ELOCKED="false" ENAPOMENA="A&#xA;B"/></ELEMENTFILE>`;
+ const before=parseCorpusE3d(xml);const e=before.elements[0]!;
+ const changed=updateCorpusElementIdentity(before.elements,e,{name:'B',code:e.code,className:e.className,visible:true,editable:true,locked:false});
+ const result=writeCorpusE3dGeometryCopy(xml,before.elements,changed.elements);
+ assert.match(result,/ENAPOMENA="A&#xA;B"/);assert.doesNotMatch(result,/EOPIS=/);
+});
+
+
+test("izmjena i kopija rupe cuvaju RVAR, nepoznate atribute/djecu i izvorni RAS", () => {
+  const rvar = '<RVAR VAR0="B=VISINA" VAR1="L=ŠIRINA"/>';
+  const ras = '<RAS MODE="4" CUSTOM="ras"><MILTOOL>103</MILTOOL><UNKNOWN X="1"/></RAS>';
+  const xml = `<ELEMENTFILE><ELEMENT ENAME="A"><DASKE><AD DNAME="Bok"><RUPE CUSTOM="container">${rvar}<!--ostaje--><GRUPA14 RNA="Stara" RXP="B/2" RYP="L/2" RFI="5" RDU="8" RPL="1" RAA="90" RZA="0" CUSTOM="hole">${ras}<EXTRA A="1"/></GRUPA14><UNKNOWN KEEP="yes"/></RUPE></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+  const original = parseCorpusE3d(xml);
+  const first = original.elements[0]!.boards[0]!.holes[0]!;
+  const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [{ ...first, name: "Izmijenjena", angle: 45 }, { ...first, name: "Kopija", plane: 0 }]);
+  const output = writeCorpusE3dGeometryCopy(xml, original.elements, changed.elements);
+  assert.ok(output.includes(rvar)); assert.ok(output.includes('<!--ostaje-->'));
+  assert.ok(output.includes('<RUPE CUSTOM="container">')); assert.ok(output.includes('<UNKNOWN KEEP="yes"/>'));
+  assert.equal(output.split(ras).length - 1, 2); assert.equal(output.split('<EXTRA A="1"/>').length - 1, 2);
+  assert.equal(output.split('CUSTOM="hole"').length - 1, 2); assert.equal(output.split('RZA="0"').length - 1, 2);
+  const holes = parseCorpusE3d(output).elements[0]!.boards[0]!.holes;
+  assert.deepEqual(holes.map(h => [h.name,h.angle,h.plane]), [["Izmijenjena",45,1],["Kopija",90,0]]);
+  const removed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, []);
+  const empty = writeCorpusE3dGeometryCopy(xml, original.elements, removed.elements);
+  assert.ok(empty.includes(rvar)); assert.ok(empty.includes('<UNKNOWN KEEP="yes"/>'));
+  assert.equal(parseCorpusE3d(empty).elements[0]!.boards[0]!.holes.length, 0);
+});
+
+test("nove rupe svih sest ploha koriste RAA i prezive E3D ponovno ucitavanje", () => {
+  const xml = '<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="P"><RUPE CUSTOM="keep"/></AD></DASKE></ELEMENT></ELEMENTFILE>';
+  const original = parseCorpusE3d(xml);
+  const holes = Array.from({length:6}, (_,plane) => ({groupType:"GRUPA14",name:`Ploha ${plane}`,xExpression:"B/2",yExpression:"L-32",diameter:5,depth:8,plane,angle:plane*15,machiningMode:null,machining:{}}));
+  const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, holes);
+  const output = writeCorpusE3dGeometryCopy(xml, original.elements, changed.elements);
+  assert.match(output, /RAA="75"/); assert.doesNotMatch(output, /RAL=/); assert.match(output, /RUPE CUSTOM="keep"/);
+  const actual = parseCorpusE3d(output).elements[0]!.boards[0]!.holes;
+  assert.deepEqual(actual.map(({sourceIndex,...hole}) => hole), holes);
+});
+
+
+test("stvarni D1V edit postojece rupe cuva svaki drugi XML bajt", () => {
+  const xml = decodeCorpusText(readFileSync("public/local-corpus/Elmsav/_____PUSTI PRIJE SVEGA/D1V.E3D"));
+  const original = parseCorpusE3d(xml);
+  const visit = (elements: typeof original.elements): typeof original.elements => elements.flatMap(element => [element, ...visit(element.children)]);
+  const target = visit(original.elements).find(element => element.boards.some(board => board.holes.length))!;
+  const boardIndex = target.boards.findIndex(board => board.holes.length);
+  const board = target.boards[boardIndex]!;
+  const first = board.holes[0]!;
+  const changed = updateCorpusBoardHoles(original.elements, target, boardIndex, [{...first,name:"IVERTIM-HOLE-ROUNDTRIP",angle:45}, ...board.holes.slice(1)]);
+  const output = writeCorpusE3dGeometryCopy(xml, original.elements, changed.elements);
+  const sourceTag = xml.match(/<GRUPA14\b[^>]*>/)![0];
+  const nextTag = sourceTag.replace(/RNA="[^"]*"/, 'RNA="IVERTIM-HOLE-ROUNDTRIP"').replace(/RAA="[^"]*"/, 'RAA="45"');
+  assert.equal(output, xml.replace(sourceTag, nextTag));
+  const restored = parseCorpusE3d(output);
+  assert.deepEqual(restored.elements, changed.elements);
+});
+
+
+test("kopiranje rupe ne premjesta RVAR preko naredne izvorne rupe", () => {
+  const a = '<GRUPA14 RNA="A" RXP="B/2" RYP="L/2" RAA="0"/>';
+  const b = '<GRUPA14 RNA="B" RXP="B/3" RYP="L/3" RAA="90"/>';
+  const context = '<RVAR VAR0="B=DRUGI_KONTEKST"/>';
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE><AD><RUPE>${a}<!--izmedju-->${context}${b}</RUPE></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+  const original = parseCorpusE3d(xml);
+  const [first,second] = original.elements[0]!.boards[0]!.holes;
+  const current = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [first!, {...first!,name:"Kopija"}, second!]);
+  const output = writeCorpusE3dGeometryCopy(xml, original.elements, current.elements);
+  assert.equal(output, xml.replace(a,a+a.replace('RNA="A"','RNA="Kopija"')));
+});
+
+
+test("stara radna kopija se izvozi bez gubitka nepoznatih atributa izvorne rupe", () => {
+  const xml = '<PROJECTFILE><ELEMENT ENAME="A"><DASKE><AD DNAME="B"><RUPE><RVAR VAR0="B=VISINA"/><GRUPA14 RNA="Prva" RXP="10" RYP="20" RDU="8" RPL="1" RAA="90" CUSTOM="ostaje"><EXTRA X="1"/></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>';
+  const original = parseCorpusS3d(xml);
+  const first = original.elements[0]!.boards[0]!.holes[0]!;
+  const current = updateCorpusBoardHoles(original.elements,original.elements[0]!,0,[{...first,depth:12}]);
+  const legacy = JSON.parse(JSON.stringify(createCorpusWorkingCopyFile("old.s3d",original.elements,current.elements)));
+  for (const change of legacy.boardHolesChanges) for (const hole of [...change.before,...change.after]) delete hole.sourceIndex;
+  const restored = applyCorpusWorkingCopyFile("old.s3d",original.elements,legacy);
+  assert.equal(writeCorpusS3dGeometryCopy(xml,original.elements,restored),xml.replace('RDU="8"','RDU="12"'));
+  const invalid = updateCorpusBoardHoles(original.elements,original.elements[0]!,0,[{...first,sourceIndex:99}]);
+  assert.throws(()=>writeCorpusS3dGeometryCopy(xml,original.elements,invalid.elements),/Izvorni XML zapis rupe nije pronađen/);
+});
+
+
+test("prva rupa dodaje nedostajuci RUPE bez gubitka ploce i drugih zapisa", () => {
+  for (const body of ['<AD DNAME="P" CUSTOM="keep"/>','<AD DNAME="P" CUSTOM="keep"><UNKNOWN X="1"/></AD>']) {
+    const xml = `<ELEMENTFILE><ELEMENT><DASKE>${body}</DASKE></ELEMENT></ELEMENTFILE>`;
+    const original = parseCorpusE3d(xml);
+    const hole = {groupType:"GRUPA14",name:"Prva",xExpression:"B/2",yExpression:"L/2",diameter:5,depth:5,plane:5,angle:45,machiningMode:null,machining:{}};
+    const current = updateCorpusBoardHoles(original.elements,original.elements[0]!,0,[hole]);
+    const output = writeCorpusE3dGeometryCopy(xml,original.elements,current.elements);
+    const parsed = parseCorpusE3d(output).elements[0]!.boards[0]!;
+    assert.equal(parsed.holes.length,1); assert.equal(parsed.holes[0]!.angle,45); assert.equal(parsed.holes[0]!.plane,5);
+    assert.ok(output.includes('CUSTOM="keep"'));
+    if (body.includes("UNKNOWN")) assert.ok(output.includes('<UNKNOWN X="1"/>'));
+  }
 });

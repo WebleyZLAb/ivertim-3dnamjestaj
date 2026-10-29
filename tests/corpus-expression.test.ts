@@ -78,3 +78,28 @@ test("kratko grananje može razriješiti izraz iako neaktivna grana ima nepoznat
   assert.equal(analysis!.value, 7);
   assert.deepEqual(analysis!.dependencies, ["NEPOZNATO"]);
 });
+
+
+test("dokumentovana matematika koristi stepene, čuva zavisnosti i odbija loš domen", () => {
+  const result=evaluateCorpusAssignments([{name:"C",expression:"SQRT(SQR(A)+SQR(B))"},{name:"A",expression:"SIN(30)*100"}],{B:0});
+  assert.ok(Math.abs(Number(result.values.C)-50)<1e-10);
+  assert.deepEqual(corpusExpressionDependencies("COS(UGAO)*D"),["UGAO","D"]);
+  assert.equal(evaluateCorpusExpression("TRUNC(-18.6)",{}),-18);
+  for(const expression of ["SQRT(-1)","SQR(100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000)","SIN(TRUE)","COS(1;2)","SIN()"])
+    assert.equal(evaluateCorpusExpression(expression,{}),null,expression);
+  assert.equal(evaluateCorpusExpression("IF(FALSE;SQRT(-1);12)",{}),12);
+});
+
+
+test("inverzni uglovi u stepenima i logaritmi po navedenoj bazi imaju provjeren domen",()=>{
+ for(const angle of [-80,-30,0,30,80]) {
+  assert.ok(Math.abs(Number(evaluateCorpusExpression(`ARCSIN(SIN(${angle}))`,{}))-angle)<1e-10);
+  assert.ok(Math.abs(Number(evaluateCorpusExpression(`ATAN(SIN(${angle})/COS(${angle}))`,{}))-angle)<1e-10);
+ }
+ assert.ok(Math.abs(Number(evaluateCorpusExpression('LOGN(4;64)',{}))-3)<1e-10);
+ assert.ok(Math.abs(Number(evaluateCorpusExpression('LOGN(0.5;8)',{}))+3)<1e-10);
+ for(const expression of ['ARCSIN(2)','ARCCOS(-2)','LN(0)','LN(-1)','LOG10(0)','LOGN(1;8)','LOGN(-2;8)','LOGN(2;0)','EXP(1000)','LOGN(2)','ATAN(1;2)'])
+  assert.equal(evaluateCorpusExpression(expression,{}),null,expression);
+ assert.equal(evaluateCorpusExpression('IF(TRUE;7;LN(-1))',{}),7);
+ assert.deepEqual(corpusExpressionDependencies('90-ARCCOS((S-W)/SIDE)'),['S','W','SIDE']);
+});

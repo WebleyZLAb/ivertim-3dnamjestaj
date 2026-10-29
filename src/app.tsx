@@ -1,4 +1,22 @@
+import { applyCorpusE3dBoardPlacement, prepareCorpusBoardPlacement } from "../lib/corpus-board-placement-formulas";
+import { corpusBoardSelectionAfterStructure, type CorpusBoardStructureChange } from "../lib/corpus-board-selection";
+import { corpusRoomCameraSessions } from "../lib/corpus-camera-session";
+import { corpusElementProductionScope } from "../lib/corpus-production-scope";
+import { prepareCorpusGroupVariableChange } from "../lib/corpus-group-variables";
+import { GroupVariableEditor, type GroupVariablePreview } from "./group-variable-editor";
+import { holeFromDraft } from "../lib/corpus-hole-draft";
+import { prepareCorpusLibraryDimensions, CorpusLibraryResizeError } from "../lib/corpus-library-dimensions";
+import { BoardFormulaEditor } from "./board-formula-editor";
+import { applyCorpusE3dBoardFormulas } from "../lib/corpus-board-formulas";
+import { MaterialReplacement } from "./material-replacement";
+import { inspectCorpusMaterialReferences, replaceCorpusMaterial, type CorpusMaterialReference } from "../lib/corpus-material-replacement";
+import { MaterialTexturesContext } from "./material-textures";
+import { inspectCorpusProductionGeometryIssues, inspectCorpusVariableAssignments, inspectCorpusGeometryIssues, recalculateCorpusE3dVariables } from "../lib/corpus-parametric";
+import { corpusVariableDefinitionIndex, corpusVariableOptionValue, type CorpusVariableDefinition } from "../lib/corpus-variable-definitions";
+import type { CorpusMaterialRecord, CorpusMaterialCatalog } from "../lib/corpus-material-library";
+import type { CorpusEdgeRecord } from "../lib/corpus-edge-library";
 import { beginCorpusEditorSession, acceptCorpusEditorSession } from "../lib/corpus-editor-session";
+import { corpusVariableDraftHasSourceNames } from "../lib/corpus-variable-draft";
 import { PanelArrayEditor } from "./panel-array-editor";
 import { ElementEditorWorkspace } from "./element-editor-workspace";
 import { Icon } from "./iconsax";
@@ -19,7 +37,7 @@ import {
 import { corpusRoomTotalHeight } from "../lib/corpus-geometry";
 import { corpusAlignedBoardPosition, corpusEvenBoardPositions, type CorpusBoardPlacementAlignment, type CorpusBoardPlacementAxis } from "../lib/corpus-board-placement";
 import { corpusAlignedBoardsToAnchor, corpusAppliedBoardAppearance, corpusBoardBounds, corpusBoardGroupBounds, corpusEvenlyDistributedBoards, corpusPlacedBoardsInElement, corpusSetBoardsVisibility, corpusTranslatedBoard, corpusTranslatedBoards, type CorpusBoardGroupAlignment, type CorpusBoardGroupAxis } from "../lib/corpus-board-group";
-import { analyzeCorpusAssignments, type CorpusExpressionValue } from "../lib/corpus-expression";
+import { analyzeCorpusAssignments } from "../lib/corpus-expression";
 import { corpusDrawingGroupBounds, corpusDrawingShape, corpusDrawingSpans, corpusDrawingSvg, type CorpusDrawingProjection } from "../lib/corpus-drawing";
 import { corpusGridCopyOffsets, corpusLinearCopies, type CorpusCopyOffset } from "../lib/corpus-array";
 import { corpusElementClearances, corpusRoomClearances } from "../lib/corpus-clearance";
@@ -31,7 +49,7 @@ import { analyzeCorpusLayout, corpusContainedLayoutElements, corpusLayoutIssueEl
 import { generateCorpusCabinetE3d, type CorpusCabinetSpec } from "../lib/corpus-generator";
 import { generateCorpusElementE3d, type CorpusElementSpec } from "../lib/corpus-element-generator";
 import { fitCorpusElementToBoards } from "../lib/corpus-element-fit";
-import { buildCorpusCutList, corpusCutListCsv, type CorpusCutListResult } from "../lib/corpus-cutlist";
+import { buildCorpusCutList, corpusCutListCsv, type CorpusCutListResult, type CorpusCutListCsvOptions } from "../lib/corpus-cutlist";
 import { buildCorpusConsumablesList, corpusConsumablesCsv, type CorpusConsumableItem } from "../lib/corpus-consumables";
 import { analyzeCorpusMacroPayload, decodeCorpusText, type CorpusMacroAnalysis } from "../lib/corpus-macro";
 import { corpusCmkDocumentFromDecodedPayloads, parseCorpusCmk, type CorpusCmkDocument } from "../lib/corpus-cmk";
@@ -42,7 +60,7 @@ import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoar
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
 import { applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
 import { createCorpusRecoverySnapshot, type CorpusRecoverySnapshot } from "../lib/corpus-recovery";
-import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
+import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, positionCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
 import { clearCorpusRecovery, loadCorpusRecovery, saveCorpusRecovery } from "./recovery-store";
 
@@ -98,12 +116,14 @@ function createProjectRecoverySnapshot(project: LoadedProject): CorpusRecoverySn
 }
 
 type MaterialTextureSource = {
-  file: File;
+  file?: File;
+  url?: string;
   name: string;
   textureSize: readonly [number | null, number | null, number | null];
 };
 
 type LoadedMaterialLibrary = {
+  catalogs: readonly CorpusMaterialCatalog[];
   folderName: string;
   catalogCount: number;
   recordCount: number;
@@ -118,10 +138,16 @@ type MaterialResolution =
   | { kind: "ambiguous"; candidates: number }
   | { kind: "missing-picture"; name: string; pictureFile: string; reason: string };
 
+type LibraryElementFile = Pick<File, "name" | "webkitRelativePath" | "text" | "size">;
+type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
+const LocalCorpusContext = createContext<LocalCorpusLibrary | null>(null);
+const localCorpusUrl = (path: string) => "/local-corpus/" + path.split("/").map(encodeURIComponent).join("/");
 const MaterialLibraryContext = createContext<LoadedMaterialLibrary | null>(null);
 
 export function App() {
-  const { activate: activateWindow } = useDesktopWindows();
+  const [cutListCsvOptions, setCutListCsvOptions] = useState<CorpusCutListCsvOptions>({});
+  const { activate: activateWindow, sidebarWidth, sidebarMaxWidth, setSidebarWidth } = useDesktopWindows();
+  const sidebarDrag = useRef<{pointerId: number; x: number; width: number} | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const workingCopyInputRef = useRef<HTMLInputElement>(null);
   const e3dImportInputRef = useRef<HTMLInputElement>(null);
@@ -145,6 +171,7 @@ export function App() {
   const [documentWindows, setDocumentWindows] = useState<Array<"data" | "room" | "cutlist">>([]);
   const editorSession = useRef<{ project: LoadedProject; path: readonly number[] | null; boardIndex: number | null } | null>(null);
   function openDocument(kind: "data" | "room" | "cutlist") {
+    if (kind === "data") setMaterialReplacementOpen(false);
     if (kind === "data" && !documentWindows.includes("data") && project && selected) {
       editorSession.current = { project, path: findCorpusElementPath(project.inspection.elements, selected), boardIndex: selectedBoardIndex };
       setProject(beginCorpusEditorSession(project));
@@ -175,17 +202,54 @@ export function App() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"data" | "drawing" | "threeD" | "room" | "cutlist">("threeD");
-  const [libraryFiles, setLibraryFiles] = useState<readonly File[]>([]);
+  const [libraryFiles, setLibraryFiles] = useState<readonly LibraryElementFile[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [elementCreatorOpen, setElementCreatorOpen] = useState(false);
-  const [macroFiles, setMacroFiles] = useState<readonly File[]>([]);
+  const [macroFiles, setMacroFiles] = useState<readonly LibraryElementFile[]>([]);
+  const [scriptLibraryOpen, setScriptLibraryOpen] = useState(false);
+  const [materialReplacementOpen, setMaterialReplacementOpen] = useState(false);
   const [macroLibraryOpen, setMacroLibraryOpen] = useState(false);
   const [macroQuery, setMacroQuery] = useState("");
   const [selectedMacro, setSelectedMacro] = useState<{ path: string; document: CorpusCmkDocument } | null>(null);
+  const [localCorpus, setLocalCorpus] = useState<LocalCorpusLibrary | null>(null);
   const [materialLibrary, setMaterialLibrary] = useState<LoadedMaterialLibrary | null>(null);
   const [recovery, setRecovery] = useState<CorpusRecoverySnapshot | null>(null);
   const [recoverySaveState, setRecoverySaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  useEffect(() => {
+    let active = true;
+    void fetch("/local-corpus/manifest.json").then(async response => {
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error("Lokalna Corpus biblioteka nije dostupna.");
+      return response.json() as Promise<LocalCorpusLibrary>;
+    }).then(data => {
+      if (!active || !data) return;
+      if (data.version !== 1 || !Array.isArray(data.catalogs) || !Array.isArray(data.elements) || !Array.isArray(data.edges) || !Array.isArray(data.files)) throw new Error("Neispravan lokalni Corpus katalog.");
+      setLocalCorpus(data);
+      setLibraryFiles(data.elements.map(path => ({ name: path.split("/").at(-1)!, webkitRelativePath: path, size: 0,
+        text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Element nije dostupan: " + path); return response.text(); } })));
+      setMacroFiles((data.macros ?? []).map(path => ({ name: path.split("/").at(-1)!, webkitRelativePath: path, size: 0,
+        text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Makro nije dostupan: " + path); return decodeCorpusText(new Uint8Array(await response.arrayBuffer())); } })));
+      const index = createCorpusMaterialIndex(data.catalogs);
+      const files = new Map(data.files.map(path => [normalizeLibraryPath(path), path]));
+      const textureByUid = new Map<string, MaterialTextureSource>();
+      const resolutionByUid = new Map<string, MaterialResolution>();
+      let ambiguousUids = 0, missingPictures = 0;
+      for (const [uid, records] of index.byUid) {
+        if (records.length !== 1) { ambiguousUids++; resolutionByUid.set(uid, { kind: "ambiguous", candidates: records.length }); continue; }
+        const record = records[0]!;
+        const picture = resolveCorpusMaterialPicturePath(record.sourceCatalog, record.pictureFile);
+        const actual = picture.ok ? files.get(normalizeLibraryPath(picture.relativePath)) : undefined;
+        if (!picture.ok || !actual) {
+          missingPictures++; resolutionByUid.set(uid, { kind: "missing-picture", name: record.name, pictureFile: record.pictureFile, reason: "Slika nije pronađena u lokalnoj biblioteci" }); continue;
+        }
+        const source = { url: localCorpusUrl(actual), name: record.name, textureSize: record.textureSize };
+        textureByUid.set(uid, source); resolutionByUid.set(uid, { kind: "ready", source });
+      }
+      setMaterialLibrary({ catalogs: data.catalogs, folderName: "Corpus", catalogCount: data.catalogs.length, recordCount: data.catalogs.reduce((s,c) => s+c.records.length,0), textureByUid, resolutionByUid, ambiguousUids, missingPictures });
+    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Lokalna biblioteka nije učitana."); });
+    return () => { active = false; };
+  }, []);
   const visibleMacroFiles = useMemo(() => {
     const needle = macroQuery.trim().toLocaleLowerCase();
     return macroFiles
@@ -199,6 +263,7 @@ export function App() {
   const selectedGroupElements = useMemo(() => project ? groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean) : [], [project, groupSelection]);
   const groupCutList = useMemo(() => buildCorpusCutList(selectedGroupElements), [selectedGroupElements]);
   const groupConsumablesList = useMemo(() => buildCorpusConsumablesList(selectedGroupElements), [selectedGroupElements]);
+  const materialReferenceAudit = useMemo(() => project && materialLibrary ? inspectCorpusMaterialReferences(project.inspection.elements, createCorpusMaterialIndex(materialLibrary.catalogs)) : null, [project?.inspection.elements, materialLibrary]);
   const projectTextureMatches = useMemo(() => {
     if (!project || !materialLibrary) return 0;
     return flattenCorpusS3dElements(project.inspection.elements).reduce((sum, element) =>
@@ -210,6 +275,11 @@ export function App() {
     void Promise.allSettled([loadCorpusRecovery(), loadRecentProjects()]).then(([recovered, recent]) => {
       if (!active) return;
       if (recovered.status === "fulfilled") setRecovery(recovered.value); else setRecoverySaveState("error");
+      const refreshState = sessionStorage.getItem("ivertim-refresh-project");
+      sessionStorage.removeItem("ivertim-refresh-project");
+      if (refreshState && recovered.status === "fulfilled" && recovered.value) {
+        restoreRecoverySnapshot(recovered.value, refreshState === "dirty");
+      }
       if (recent.status === "fulfilled") setRecentProjects(recent.value); else setRecentError("Lista nedavnih projekata trenutno nije dostupna.");
       setHistoryReady(true);
     });
@@ -233,6 +303,17 @@ export function App() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
+  }, [project]);
+
+  useEffect(() => {
+    const reload = (event: KeyboardEvent) => {
+      if (event.key !== "F5" || event.altKey || event.metaKey) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!event.repeat) void refreshApplication();
+    };
+    window.addEventListener("keydown", reload, true);
+    return () => window.removeEventListener("keydown", reload, true);
   }, [project]);
 
   useEffect(() => {
@@ -385,8 +466,8 @@ export function App() {
 
   function loadProject(fileName: string, fileSize: number, sourceXml: string, inspection: CorpusS3dInspection) {
     editorSession.current = null;
-    setStartupOpen(false); setViewMode("threeD"); setDocumentWindows([]); setRightTab("elements");
-    setLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
+    setStartupOpen(false); setViewMode("threeD"); setDocumentWindows([]); setMaterialReplacementOpen(false); setRightTab("elements");
+    setLibraryOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
     void rememberProject({ fileName, fileSize, sourceXml }).then(setRecentProjects).catch(() => setRecentError("Nedavne projekte nije moguće sačuvati."));
 
     const standaloneE3dSource = inspection.format === "corpus-e3d" && inspection.elements[0]
@@ -451,8 +532,23 @@ export function App() {
     setGroupSelection(rootIndexes);
   }, [project]);
 
+  async function refreshApplication() {
+    try {
+      if (project) {
+        await saveCorpusRecovery(createProjectRecoverySnapshot(project));
+        sessionStorage.setItem("ivertim-refresh-project", project.dirty ? "dirty" : "clean");
+      }
+      window.location.reload();
+    } catch {
+      setError("Osvježavanje je zaustavljeno jer radnu kopiju nije moguće sačuvati.");
+    }
+  }
+
   function restoreLocalRecovery() {
-    if (!recovery) return;
+    if (recovery) restoreRecoverySnapshot(recovery);
+  }
+
+  function restoreRecoverySnapshot(recovery: CorpusRecoverySnapshot, dirty = true) {
     try {
       const originalInspection = recovery.fileName.toLowerCase().endsWith(".e3d")
         ? parseCorpusE3d(recovery.sourceXml)
@@ -473,7 +569,7 @@ export function App() {
         sourceXml: recovery.sourceXml,
         inspection,
         originalInspection,
-        dirty: true,
+        dirty,
         history: [],
         future: [],
         importedE3dSources: restored.importedE3dSources,
@@ -517,16 +613,16 @@ export function App() {
       { label: "Učitaj radnu kopiju…", disabled: !project, onClick: () => workingCopyInputRef.current?.click() },
       { label: "Izvezi Corpus projekat…", disabled: !project?.dirty, onClick: exportS3dCopy },
       { label: "Vrati originalni projekat", disabled: !project?.dirty, onClick: resetWorkingCopy },
-      { label: "Zatvori projekat", disabled: !project, separator: true, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
+      { label: "Zatvori projekat", disabled: !project, separator: true, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
     ] },
     { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
+    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
-    { label: "Kalkulacije", items: [ { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
+    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
     { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
-    { label: "Pomoć", items: [ { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
+    { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
   ];
   const chrome = <DesktopHeader menus={menus}>
     <DesktopTool label="Novi projekat" icon="new" onClick={newDesktopProject} /><DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} /><DesktopTool label="Sačuvaj radnu kopiju" icon="save" disabled={!project?.dirty} onClick={exportWorkingCopy} /><span className="desktop-toolbar-separator" />
@@ -534,6 +630,7 @@ export function App() {
     <DesktopTool label="3D prostorija" icon="room" disabled={!project} active={viewMode === "threeD"} onClick={() => setViewMode("threeD")} /><DesktopTool label="Tehnički nacrt" icon="drawing" disabled={!project} active={viewMode === "drawing"} onClick={() => setViewMode("drawing")} /><DesktopTool label="Biblioteka elemenata" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openLibrary} /><DesktopTool label="Materijali i krojna lista" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} /><DesktopTool label="Postavke prostorije" icon="settings" disabled={!project} onClick={() => setRightTab("room")} />
   </DesktopHeader>;
   const startup = startupOpen && <StartProjectWindow recent={recentProjects} onNew={newDesktopProject} onOpen={() => inputRef.current?.click()} onRecent={openRecentProject} onClose={() => setStartupOpen(false)}>
+
     {error && <p className="desktop-inline-error" role="alert">{error}</p>}{recentError && <p className="desktop-inline-error">{recentError}</p>}
     {recovery && <div className="desktop-recovery"><span>Nedovršena sesija: {recovery.fileName}</span><button onClick={restoreLocalRecovery}>Vrati sesiju</button></div>}
   </StartProjectWindow>;
@@ -559,6 +656,15 @@ export function App() {
 
   function updateSelectedElement(patch: ElementGeometryPatch) {
     if (!selected || !corpusElementAllowsModeling(selected)) return;
+    const target = structuredE3dTarget();
+    if (target && (patch.width !== selected.width || patch.height !== selected.height || patch.depth !== selected.depth)) {
+      try {
+        const next = { ...selected, ...patch };
+        const xml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [next]);
+        applyStructuredE3dSource(target, recalculateCorpusE3dVariables(xml, { rejectInvalidDimensions: true }), selectedBoardIndex);
+      } catch (reason) { const message = reason instanceof Error ? reason.message : "Mjere nije moguće preračunati."; setError(message); return message; }
+      return;
+    }
     const { elements, updated: updatedSelection } = updateCorpusElement(project!.inspection.elements, selected, patch);
     setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements }, dirty: true } : current);
     setSelected(updatedSelection);
@@ -597,6 +703,15 @@ export function App() {
     setSelectedBoardIndex(null);
   }
 
+  function setTreeElementVisibility(element: CorpusS3dElement, visible: boolean) {
+    if (!project || (element.visible !== false) === visible) return;
+    const selectionPath = selected ? findCorpusElementPath(project.inspection.elements, selected) : null;
+    const result = updateCorpusElementIdentity(project.inspection.elements, element, { name: element.name, code: element.code, className: element.className, editable: element.editable, locked: element.locked, visible });
+    if (!result.updated) return;
+    setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: result.elements }, dirty: true } : current);
+    setSelected(selectionPath ? corpusElementAtPath(result.elements, selectionPath) : null);
+  }
+
   function updateSelectedElementIdentity(patch: ElementIdentityPatch) {
     if (!selected) return;
     const { elements, updated: updatedSelection } = updateCorpusElementIdentity(project!.inspection.elements, selected, patch);
@@ -606,14 +721,19 @@ export function App() {
 
   function updateSelectedElementVariables(variables: ElementVariablesPatch) {
     if (!selected || !corpusElementAllowsModeling(selected)) return;
-    const structuredTarget = structuredE3dTarget();
+    const path=findCorpusElementPath(project!.inspection.elements,selected);
+    if(path?.some((_,i)=>{const ancestor=corpusElementAtPath(project!.inspection.elements,path.slice(0,i+1));return !ancestor || !corpusElementAllowsModeling(ancestor);}))return "Varijable nisu promijenjene: element ili nadređeni element je zaključan.";
+    const structuredTarget = structuredE3dTarget(undefined,true);
     if (structuredTarget) {
       try {
-        const editedSource = writeCorpusE3dGeometryCopy(structuredTarget.source.sourceXml, [structuredTarget.source.originalElement], [selected]);
-        const nextSourceXml = replaceCorpusE3dElementVariables(editedSource, [0], variables);
-        applyStructuredE3dSource(structuredTarget, nextSourceXml, selectedBoardIndex ?? 0);
+        const editedSource = writeCorpusE3dGeometryCopy(structuredTarget.source.sourceXml, [structuredTarget.source.originalElement], [project!.inspection.elements[structuredTarget.rootIndex]!]);
+        const variableSource = replaceCorpusE3dElementVariables(editedSource, structuredTarget.elementPath ?? [0], variables);
+        const nextSourceXml = recalculateCorpusE3dVariables(variableSource, { rejectInvalidDimensions: true });
+        applyStructuredE3dSource(structuredTarget, nextSourceXml, selectedBoardIndex);
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "Varijable elementa nije moguće promijeniti.");
+        const message = reason instanceof Error ? reason.message : "Varijable elementa nije moguće promijeniti.";
+        setError(message);
+        return message;
       }
       return;
     }
@@ -635,6 +755,28 @@ export function App() {
     if (!result.updatedElement) return;
     setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: result.elements }, dirty: true } : current);
     setSelected(result.updatedElement);
+  }
+
+  function replaceProjectMaterial(source: CorpusMaterialReference, destination: CorpusMaterialRecord, scope: "one" | "same") {
+    if (!project || !materialLibrary || editorSession.current) return 0;
+    const records = materialLibrary.catalogs.flatMap((catalog) => catalog.records).filter((record) => normalizeMaterialUid(record.uid) === normalizeMaterialUid(destination.uid));
+    if (records.length !== 1 || records[0] !== destination) return 0;
+    const result = replaceCorpusMaterial(project.inspection.elements, source, destination, scope);
+    if (!result.changed) return 0;
+    const path = selected ? findCorpusElementPath(project.inspection.elements, selected) : null;
+    setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: result.elements }, dirty: true } : current);
+    if (path) setSelected(corpusElementAtPath(result.elements, path));
+    return result.changed;
+  }
+
+  function updateSelectedBoardFormulas(boardIndex: number, patch: Readonly<Record<string,string>>): string | void {
+    const target=structuredE3dTarget(boardIndex,true);
+    if(!target || !selected)return "Upis izraza nije dostupan za ovaj element.";
+    try {
+      const root=project!.inspection.elements[target.rootIndex]!;
+      const xml=writeCorpusE3dGeometryCopy(target.source.sourceXml,[target.source.originalElement],[root]);
+      applyStructuredE3dSource(target,applyCorpusE3dBoardFormulas(xml,boardIndex,patch,target.elementPath),boardIndex);
+    } catch(reason) { return reason instanceof Error?reason.message:"Izraz nije moguće primijeniti."; }
   }
 
   function updateSelectedBoardAppearance(boardIndex: number, patch: BoardAppearancePatch) {
@@ -689,6 +831,30 @@ export function App() {
     setGroupSelection(selectedIndex >= 0 && unique.includes(selectedIndex)
       ? [selectedIndex, ...unique.filter((index) => index !== selectedIndex)]
       : unique);
+  }
+
+  function prepareGroupVariable(name: string, value: string): GroupVariablePreview {
+    if (!project || editorSession.current) throw new Error("Zatvori sesiju editora prije grupne izmjene.");
+    const originalCount = project.originalInspection.elements.length;
+    if (project.inspection.format !== "corpus-s3d" || groupSelection.some(index => index < originalCount || !project.importedE3dSources[index-originalCount]))
+      throw new Error("Grupna primjena zahtijeva E3D izvore za sve označene elemente. Izvorni S3D elementi ovdje nisu podržani.");
+    const targets = groupSelection.map(rootIndex => ({rootIndex,element:project.inspection.elements[rootIndex]!,source:project.importedE3dSources[rootIndex-originalCount]!}));
+    return {beforeElements:project.inspection.elements,beforeSources:project.importedE3dSources,indexes:[...groupSelection],targets:prepareCorpusGroupVariableChange(targets,name,value),name,value};
+  }
+
+  function applyGroupVariable(preview: GroupVariablePreview): string | undefined {
+    if (!project || editorSession.current || preview.beforeElements !== project.inspection.elements || preview.beforeSources !== project.importedE3dSources || preview.indexes.join(",") !== groupSelection.join(","))
+      return "Projekat ili označena grupa su promijenjeni. Ponovo pregledaj izmjenu prije primjene.";
+    const originalCount = project.originalInspection.elements.length;
+    const replacements = new Map(preview.targets.map(target=>[target.rootIndex,target]));
+    const elements = project.inspection.elements.map((element,index)=>replacements.get(index)?.element ?? element);
+    const importedE3dSources = project.importedE3dSources.map((source,index)=>replacements.get(originalCount+index)?.source ?? source);
+    const selectionPath = selected ? findCorpusElementPath(project.inspection.elements,selected) : null;
+    setProject({...project,history:appendProjectHistory(project),future:[],inspection:{...project.inspection,elements},importedE3dSources,dirty:true});
+    if (selectionPath) setSelected(corpusElementAtPath(elements,selectionPath));
+    setSelectedBoardIndex(null);
+    setError(null);
+    return;
   }
 
   function applyGroupedElements(elements: readonly CorpusS3dElement[]): boolean {
@@ -944,28 +1110,34 @@ export function App() {
     setGroupSelection([]);
   }
 
-  function structuredE3dTarget(boardIndex?: number): { rootIndex: number; importIndex: number | null; source: CorpusE3dImportSource } | null {
+  function structuredE3dTarget(boardIndex?: number, includeDescendants = false): { rootIndex: number; importIndex: number | null; source: CorpusE3dImportSource; elementPath?: readonly number[] } | null {
     if (!project || !selected || !corpusElementAllowsModeling(selected)) return null;
     if (boardIndex !== undefined && !selected.boards[boardIndex]) return null;
     const path = findCorpusElementPath(project.inspection.elements, selected);
-    if (!path || path.length !== 1) return null;
+    if (!path || (!includeDescendants && path.length !== 1)) return null;
+    if(includeDescendants && path.some((_,i)=>{const ancestor=corpusElementAtPath(project.inspection.elements,path.slice(0,i+1));return !ancestor || !corpusElementAllowsModeling(ancestor);}))return null;
+    const elementPath=[0,...path.slice(1)];
     if (project.inspection.format === "corpus-e3d") {
-      return project.standaloneE3dSource ? { rootIndex: path[0]!, importIndex: null, source: project.standaloneE3dSource } : null;
+      return project.standaloneE3dSource ? { rootIndex: path[0]!, importIndex: null, source: project.standaloneE3dSource, elementPath } : null;
     }
     const originalCount = project.originalInspection.elements.length;
     if (path[0]! < originalCount) return null;
     const importIndex = path[0]! - originalCount;
     const source = project.importedE3dSources[importIndex];
-    return source ? { rootIndex: path[0]!, importIndex, source } : null;
+    return source ? { rootIndex: path[0]!, importIndex, source, elementPath } : null;
   }
 
   function applyStructuredE3dSource(
-    target: { rootIndex: number; importIndex: number | null; source: CorpusE3dImportSource },
+    target: { rootIndex: number; importIndex: number | null; source: CorpusE3dImportSource; elementPath?: readonly number[] },
     nextSourceXml: string,
-    selectedBoard: number,
+    selectedBoard: number | null,
+    structureChange?: CorpusBoardStructureChange,
   ) {
     const nextElement = parseCorpusE3d(nextSourceXml).elements[0];
     if (!nextElement) throw new Error("Izmijenjeni E3D nema korijenski element.");
+    const nextBoardGroup = structureChange && selected
+      ? corpusBoardSelectionAfterStructure(boardGroupSelection, selected.boards.length, structureChange)
+      : null;
     const nextSource = { ...target.source, sourceXml: nextSourceXml, originalElement: nextElement };
     setProject((current) => current ? {
       ...current,
@@ -978,8 +1150,10 @@ export function App() {
       standaloneE3dSource: target.importIndex === null ? nextSource : current.standaloneE3dSource,
       dirty: true,
     } : current);
-    setSelected(nextElement);
-    setSelectedBoardIndex(nextElement.boards.length ? Math.min(Math.max(0, selectedBoard), nextElement.boards.length - 1) : null);
+    if (nextBoardGroup) setBoardGroupSelection(nextBoardGroup);
+    const nextSelection=corpusElementAtPath([nextElement],target.elementPath ?? [0]) ?? nextElement;
+    setSelected(nextSelection);
+    setSelectedBoardIndex(selectedBoard !== null && nextSelection.boards.length ? Math.min(Math.max(0, selectedBoard), nextSelection.boards.length - 1) : null);
     setError(null);
   }
 
@@ -1000,6 +1174,21 @@ export function App() {
     return true;
   }
 
+  function applyBoardPlacementModel(requested: CorpusS3dElement, nextSelectedBoard: number): boolean {
+    if (!project || !selected) return false;
+    const path = findCorpusElementPath(project.inspection.elements,selected);
+    if (!path) return false;
+    if (path.some((_,index) => { const ancestor = corpusElementAtPath(project.inspection.elements,path.slice(0,index+1)); return !ancestor || !corpusElementAllowsModeling(ancestor); })) throw new Error("Nadređeni ili izabrani element je zaključan ili neurediv.");
+    const root = project.inspection.elements[path[0]!]!;
+    const { resolved } = prepareCorpusBoardPlacement(root,requested,[0,...path.slice(1)]);
+    setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], dirty: true, inspection: { ...current.inspection, elements: current.inspection.elements.map((entry,index) => index === path[0] ? resolved : entry) } } : current);
+    const next = corpusElementAtPath([resolved],[0,...path.slice(1)])!;
+    setSelected(next);
+    setSelectedBoardIndex(next.boards.length ? Math.min(Math.max(0,nextSelectedBoard),next.boards.length-1) : null);
+    setError(null);
+    return true;
+  }
+
   function duplicateSelectedBoard(boardIndex: number) {
     const target = structuredE3dTarget(boardIndex);
     if (!target || !selected) return;
@@ -1007,7 +1196,7 @@ export function App() {
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
       const copyName = nextBoardCopyName(selected.boards[boardIndex]!.name, selected.boards.map((board) => board.name));
       const nextSourceXml = duplicateCorpusE3dBoard(editedSource, boardIndex, copyName);
-      applyStructuredE3dSource(target, nextSourceXml, boardIndex + 1);
+      applyStructuredE3dSource(target, nextSourceXml, boardIndex + 1, { kind: "copy", copies: [{ boardIndex, count: 1 }] });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Ploču nije moguće udvostručiti.");
     }
@@ -1033,7 +1222,7 @@ export function App() {
         };
       });
       const nextSourceXml = duplicateCorpusE3dBoardCopies(editedSource, boardIndex, copies);
-      applyStructuredE3dSource(target, nextSourceXml, boardIndex + count);
+      applyStructuredE3dSource(target, nextSourceXml, boardIndex + count, { kind: "copy", copies: [{ boardIndex, count }] });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Niz ploča nije moguće napraviti.");
     }
@@ -1060,7 +1249,7 @@ export function App() {
         };
       });
       const nextSourceXml = duplicateCorpusE3dBoardCopies(editedSource, boardIndex, copies);
-      applyStructuredE3dSource(target, nextSourceXml, boardIndex + copies.length);
+      applyStructuredE3dSource(target, nextSourceXml, boardIndex + copies.length, { kind: "copy", copies: [{ boardIndex, count: copies.length }] });
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Mrežu ploča nije moguće napraviti.");
@@ -1073,8 +1262,9 @@ export function App() {
     if (!selected) return false;
     try {
       const translated = corpusTranslatedBoards(selected, boardIndexes, delta);
-      if (!target) return applyBoardGroupModel(translated, selectedBoardIndex ?? boardIndexes[0] ?? 0);
-      const nextSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [translated]);
+      if (!target) return applyBoardPlacementModel(translated, selectedBoardIndex ?? boardIndexes[0] ?? 0);
+      const currentSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
+      const nextSourceXml = applyCorpusE3dBoardPlacement(currentSourceXml, translated);
       applyStructuredE3dSource(target, nextSourceXml, selectedBoardIndex ?? boardIndexes[0] ?? 0);
       return true;
     } catch (reason) {
@@ -1088,8 +1278,9 @@ export function App() {
     if (!selected) return false;
     try {
       const translated = corpusTranslatedBoard(selected, boardIndex, delta);
-      if (!target) return applyBoardGroupModel(translated, boardIndex);
-      const nextSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [translated]);
+      if (!target) return applyBoardPlacementModel(translated, boardIndex);
+      const currentSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
+      const nextSourceXml = applyCorpusE3dBoardPlacement(currentSourceXml, translated);
       applyStructuredE3dSource(target, nextSourceXml, boardIndex);
       return true;
     } catch (reason) {
@@ -1103,8 +1294,9 @@ export function App() {
     if (!selected) return null;
     try {
       const distribution = corpusEvenlyDistributedBoards(selected, boardIndexes, axis);
-      if (!target) return applyBoardGroupModel(distribution.element, selectedBoardIndex ?? boardIndexes[0] ?? 0) ? distribution.gap : null;
-      const nextSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [distribution.element]);
+      if (!target) return applyBoardPlacementModel(distribution.element, selectedBoardIndex ?? boardIndexes[0] ?? 0) ? distribution.gap : null;
+      const currentSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
+      const nextSourceXml = applyCorpusE3dBoardPlacement(currentSourceXml, distribution.element);
       applyStructuredE3dSource(target, nextSourceXml, selectedBoardIndex ?? boardIndexes[0] ?? 0);
       return distribution.gap;
     } catch (reason) {
@@ -1118,8 +1310,9 @@ export function App() {
     if (!selected) return false;
     try {
       const aligned = corpusAlignedBoardsToAnchor(selected, boardIndexes, axis, alignment);
-      if (!target) return applyBoardGroupModel(aligned, selectedBoardIndex ?? boardIndexes[0] ?? 0);
-      const nextSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [aligned]);
+      if (!target) return applyBoardPlacementModel(aligned, selectedBoardIndex ?? boardIndexes[0] ?? 0);
+      const currentSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
+      const nextSourceXml = applyCorpusE3dBoardPlacement(currentSourceXml, aligned);
       applyStructuredE3dSource(target, nextSourceXml, selectedBoardIndex ?? boardIndexes[0] ?? 0);
       return true;
     } catch (reason) {
@@ -1133,8 +1326,9 @@ export function App() {
     if (!selected) return false;
     try {
       const placed = corpusPlacedBoardsInElement(selected, boardIndexes, axis, alignment, inset);
-      if (!target) return applyBoardGroupModel(placed.element, selectedBoardIndex ?? boardIndexes[0] ?? 0);
-      const nextSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [placed.element]);
+      if (!target) return applyBoardPlacementModel(placed.element, selectedBoardIndex ?? boardIndexes[0] ?? 0);
+      const currentSourceXml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
+      const nextSourceXml = applyCorpusE3dBoardPlacement(currentSourceXml, placed.element);
       applyStructuredE3dSource(target, nextSourceXml, selectedBoardIndex ?? boardIndexes[0] ?? 0);
       return true;
     } catch (reason) {
@@ -1157,7 +1351,7 @@ export function App() {
       });
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
       const nextSourceXml = duplicateCorpusE3dBoards(editedSource, copies);
-      applyStructuredE3dSource(target, nextSourceXml, copies[0]!.boardIndex + 1);
+      applyStructuredE3dSource(target, nextSourceXml, copies[0]!.boardIndex + 1, { kind: "copy", copies: copies.map(copy => ({ boardIndex: copy.boardIndex, count: 1 })) });
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Označene ploče nije moguće kopirati.");
@@ -1181,7 +1375,7 @@ export function App() {
     try {
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
       const nextSourceXml = removeCorpusE3dBoards(editedSource, indexes);
-      applyStructuredE3dSource(target, nextSourceXml, Math.max(0, indexes[0]! - 1));
+      applyStructuredE3dSource(target, nextSourceXml, Math.max(0, indexes[0]! - 1), { kind: "remove", indexes });
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Označene ploče nije moguće ukloniti.");
@@ -1237,17 +1431,8 @@ export function App() {
         return { name, position };
       });
       const expandedSource = duplicateCorpusE3dBoardCopies(editedSource, boardIndex, copies);
-      const expandedElement = parseCorpusE3d(expandedSource).elements[0];
-      if (!expandedElement) throw new Error("Prošireni E3D nema korijenski element.");
-      const positionedElement = {
-        ...expandedElement,
-        boards: expandedElement.boards.map((entry, index) => {
-          if (index < boardIndex || index > boardIndex + copiesCount) return entry;
-          return { ...entry, position: distribution.positions[index - boardIndex]! };
-        }),
-      };
-      const nextSourceXml = writeCorpusE3dGeometryCopy(expandedSource, [expandedElement], [positionedElement]);
-      applyStructuredE3dSource(target, nextSourceXml, boardIndex + copiesCount);
+      const nextSourceXml = positionCorpusE3dBoard(expandedSource, boardIndex, distribution.positions[0]!);
+      applyStructuredE3dSource(target, nextSourceXml, boardIndex + copiesCount, { kind: "copy", copies: [{ boardIndex, count: copiesCount }] });
       return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Ploče nije moguće ravnomjerno rasporediti.");
@@ -1263,7 +1448,7 @@ export function App() {
     try {
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
       const nextSourceXml = removeCorpusE3dBoard(editedSource, boardIndex);
-      applyStructuredE3dSource(target, nextSourceXml, Math.max(0, boardIndex - 1));
+      applyStructuredE3dSource(target, nextSourceXml, Math.max(0, boardIndex - 1), { kind: "remove", indexes: [boardIndex] });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Ploču nije moguće ukloniti.");
     }
@@ -1323,7 +1508,7 @@ export function App() {
     try {
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
       const nextSourceXml = moveCorpusE3dBoard(editedSource, boardIndex, toIndex);
-      applyStructuredE3dSource(target, nextSourceXml, toIndex);
+      applyStructuredE3dSource(target, nextSourceXml, toIndex, { kind: "move", from: boardIndex, to: toIndex });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Redoslijed ploča nije moguće promijeniti.");
     }
@@ -1409,7 +1594,7 @@ export function App() {
 
   function exportCutList(result = cutList, groupOnly = false) {
     const stem = project!.fileName.replace(/\.(?:s3d|e3d)$/i, "");
-    downloadText(`${stem}${groupOnly ? "-OZNACENA-GRUPA" : ""}-KROJNA-LISTA.csv`, corpusCutListCsv(result), "text/csv;charset=utf-8");
+    downloadText(`${stem}${groupOnly ? "-OZNACENA-GRUPA" : ""}-KROJNA-LISTA.csv`, corpusCutListCsv(result, cutListCsvOptions), "text/csv;charset=utf-8");
   }
 
   function exportConsumables(items: readonly CorpusConsumableItem[] = consumablesList, groupOnly = false) {
@@ -1534,7 +1719,7 @@ export function App() {
       }
       const firstPath = allFiles[0] ? libraryFilePath(allFiles[0]) : "elmtex";
       setMaterialLibrary({
-        folderName: firstPath.split("/")[0] || "elmtex", catalogCount: catalogs.length,
+        catalogs, folderName: firstPath.split("/")[0] || "elmtex", catalogCount: catalogs.length,
         recordCount: catalogs.reduce((sum, catalog) => sum + catalog.records.length, 0),
         textureByUid, resolutionByUid, ambiguousUids, missingPictures,
       });
@@ -1547,9 +1732,9 @@ export function App() {
     }
   }
 
-  async function inspectMacro(file: File) {
+  async function inspectMacro(file: LibraryElementFile) {
     try {
-      const text = decodeCorpusText(new Uint8Array(await file.arrayBuffer()));
+      const text = file instanceof File ? decodeCorpusText(new Uint8Array(await file.arrayBuffer())) : await file.text();
       setSelectedMacro({ path: libraryFilePath(file), document: parseCorpusCmk(text) });
       setError(null);
     } catch (reason) {
@@ -1584,14 +1769,14 @@ export function App() {
   const renderDocument = (mode: "data" | "room" | "cutlist") => <>          {mode === "room" ? (
             <RoomEditor room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} />
           ) : mode === "cutlist" ? (
-            <CutListView result={cutList} consumables={consumablesList} groupResult={groupCutList} groupConsumables={groupConsumablesList} groupCount={selectedGroupElements.length} onExport={exportCutList} onExportConsumables={exportConsumables} />
+            <CutListView csvOptions={cutListCsvOptions} onCsvOptionsChange={setCutListCsvOptions} elements={project.inspection.elements} groupElements={selectedGroupElements} result={cutList} consumables={consumablesList} groupResult={groupCutList} groupConsumables={groupConsumablesList} groupCount={selectedGroupElements.length} onExport={exportCutList} onExportConsumables={exportConsumables} />
           ) : (
-            selected ? <ElementDetails onAddBoards={addBoardsToSelectedElement} canRedo={project.future.length > 0} onRedo={redoWorkingCopy} onAccept={() => finishElementEditor(true)} onCancel={() => finishElementEditor(false)} key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onRenameBoard={renameSelectedBoard} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={exportSelectedE3d} canChangeStructure={(project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && corpusElementAllowsModeling(selected)} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => { finishElementEditor(true); openDocument("cutlist"); }} /> : <EmptyDetails />
+            selected ? <ElementDetails onAddBoards={addBoardsToSelectedElement} canRedo={project.future.length > 0} onRedo={redoWorkingCopy} onAccept={() => finishElementEditor(true)} onCancel={() => finishElementEditor(false)} key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardFormulas={updateSelectedBoardFormulas} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} formulaElementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEditFormulas={Boolean(structuredE3dTarget(undefined,true))} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onRenameBoard={renameSelectedBoard} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={exportSelectedE3d} canChangeStructure={Boolean(structuredE3dTarget())} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected))} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => { finishElementEditor(true); openDocument("cutlist"); }} /> : <EmptyDetails />
           )}
 </>;
 
   return (
-    <MaterialLibraryContext.Provider value={materialLibrary}>
+    <LocalCorpusContext.Provider value={localCorpus}><MaterialLibraryContext.Provider value={materialLibrary}><MaterialTexturesContext.Provider value={materialLibrary?.textureByUid ?? EMPTY_MATERIAL_TEXTURES}>
     <div className="app-shell corpus-desktop" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); void openFile(event.dataTransfer.files[0]); }}>
       {chrome}
         <input ref={inputRef} hidden type="file" accept=".s3d,.S3D,.e3d,.E3D,application/xml,text/xml" onChange={(event) => openFile(event.target.files?.[0])} />
@@ -1640,6 +1825,8 @@ export function App() {
         }} />
       )}
 
+      {scriptLibraryOpen && localCorpus && <CorpusScriptLibrary library={localCorpus} onClose={() => setScriptLibraryOpen(false)} />}
+      {materialReplacementOpen && materialLibrary && <DesktopWindow id="material-replacement" title="Provjera i zamjena materijala" className="desktop-document-window" onClose={() => setMaterialReplacementOpen(false)}><MaterialReplacement elements={project.inspection.elements} catalogs={materialLibrary.catalogs} onReplace={replaceProjectMaterial} /></DesktopWindow>}
       {macroLibraryOpen && (
         <DesktopWindow id="macros" title="Biblioteka makroa" className="desktop-library-window" onClose={() => setMacroLibraryOpen(false)}><div className="library-backdrop">
           <section className="library-panel macro-library-panel" role="region" aria-label="Corpus biblioteka makroa" onMouseDown={(event) => event.stopPropagation()}>
@@ -1657,7 +1844,7 @@ export function App() {
                 {visibleMacroFiles.map((file) => {
                   const path = libraryFilePath(file);
                   const parts = path.split("/");
-                  return <button key={path} aria-current={selectedMacro?.path === path ? "true" : undefined} className={selectedMacro?.path === path ? "active" : ""} onClick={() => inspectMacro(file)}><span><strong>{file.name.replace(/\.cmk$/i, "")}</strong><small>{parts.slice(0, -1).join(" / ") || "Korijenski folder"} · {formatBytes(file.size)}</small></span><i>Pregled</i></button>;
+                  return <button key={path} aria-current={selectedMacro?.path === path ? "true" : undefined} className={selectedMacro?.path === path ? "active" : ""} onClick={() => inspectMacro(file)}><span><strong>{file.name.replace(/\.cmk$/i, "")}</strong><small>{parts.slice(0, -1).join(" / ") || "Korijenski folder"} · {file.size ? formatBytes(file.size) : "lokalni katalog"}</small></span><i>Pregled</i></button>;
                 })}
                 {!visibleMacroFiles.length && <p className="no-results">Nema CMK makroa za ovu pretragu.</p>}
               </div>
@@ -1690,7 +1877,18 @@ export function App() {
           <hr />
           <button aria-label="Postavke prostorije" title="Postavke prostorije" onClick={() => setRightTab("room")}><Icon name="settings" variant="twotone" /><small>Soba</small></button>
         </nav>}
-        <aside className={`desktop-sidebar tab-${rightTab}`} aria-label="Panel projekta">
+        <div className="desktop-sidebar-split" role="separator" aria-label="Širina panela projekta" aria-orientation="vertical" aria-controls="project-sidebar" aria-valuemin={190} aria-valuemax={sidebarMaxWidth} aria-valuenow={sidebarWidth} tabIndex={0} title="Povuci za širinu panela; strelice podešavaju, dvoklik ili Enter vraća početnu širinu" onKeyDown={event => {
+          const next = event.key === "ArrowLeft" ? sidebarWidth + 20 : event.key === "ArrowRight" ? sidebarWidth - 20 : event.key === "Home" ? 190 : event.key === "End" ? sidebarMaxWidth : event.key === "Enter" ? 310 : null;
+          if (next === null) return; event.preventDefault(); event.stopPropagation(); setSidebarWidth(Math.min(sidebarMaxWidth, next));
+        }} onDoubleClick={() => setSidebarWidth(310)} onPointerDown={event => {
+          if (event.button !== 0) return; event.preventDefault(); sidebarDrag.current = {pointerId:event.pointerId,x:event.clientX,width:sidebarWidth}; event.currentTarget.setPointerCapture(event.pointerId);
+        }} onPointerMove={event => {
+          const drag = sidebarDrag.current; if (!drag || drag.pointerId !== event.pointerId) return;
+          setSidebarWidth(Math.min(sidebarMaxWidth, drag.width + drag.x - event.clientX));
+        }} onPointerUp={event => {
+          sidebarDrag.current = null; if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        }} onPointerCancel={() => { sidebarDrag.current = null; }} onLostPointerCapture={() => { sidebarDrag.current = null; }} />
+        <aside id="project-sidebar" className={`desktop-sidebar tab-${rightTab}`} aria-label="Panel projekta">
           <div className="desktop-panel-tabs" role="tablist" aria-label="Desni panel" onKeyDown={(event) => {
             const tabs = ["elements", "room", "properties"] as const; const index = tabs.indexOf(rightTab);
             const next = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : null;
@@ -1719,6 +1917,7 @@ export function App() {
               onSelect={selectElement}
               groupSelection={groupSelection}
               onToggleGroup={toggleGroupElement}
+              onSetVisibility={setTreeElementVisibility}
             />
           </div>
         </aside>
@@ -1731,6 +1930,8 @@ export function App() {
                     <strong>{selectedBoardIndex !== null ? selected.boards[selectedBoardIndex]?.name || `Ploča ${selectedBoardIndex + 1}` : selected.name || "Neimenovan element"}</strong>
                     <span>{selectedBoardIndex !== null ? selected.name : selected.code || selected.className || "Bez šifre"}</span>
                   </div>
+                  {selectedBoardIndex === null && selected.description && <p className="inspector-description"><strong>Opis</strong>{selected.description}</p>}
+                  {selectedBoardIndex === null && selected.note && <p className="inspector-note"><strong>Napomena</strong>{selected.note}</p>}
                   {selectedBoardIndex !== null && selected.boards[selectedBoardIndex] ? (
                     <dl className="inspector-properties">
                       <div><dt>Širina</dt><dd>{formatNumber(selected.boards[selectedBoardIndex]!.width)} mm</dd></div>
@@ -1741,6 +1942,12 @@ export function App() {
                   ) : (
                     <WorkspaceGeometryEditor element={selected} onUpdate={updateSelectedElement} />
                   )}
+                  {selectedBoardIndex === null && Object.keys(selected.variables).length > 0 && <details className="inspector-variables" open key={`${project.fileName}:${findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name}`}>
+                    <summary>Konstrukcijske varijable <span>{Object.keys(selected.variables).length}</span></summary>
+                    <ElementVariablesEditor compact element={selected} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} elementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEdit={corpusElementAllowsModeling(selected)} canChangeStructure={false} onUpdate={updateSelectedElementVariables} />
+                    {!(project.inspection.format === "corpus-e3d" || isImportedRoot(project, project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected)) && <p className="inspector-help">Izvorni S3D čuva vrijednosti; preračunavanje konstrukcije dostupno je za E3D elemente.</p>}
+                  </details>}
+                  {groupSelection.length >= 2 && <GroupVariableEditor key={groupSelection.join(",")} elements={selectedGroupElements} blockedReason={editorSession.current ? "Zatvori editor prije grupne primjene." : groupSelection.some(index=>index<project.originalInspection.elements.length || !project.importedE3dSources[index-project.originalInspection.elements.length]) ? "Za ovu primjenu svaki označeni element mora imati vlastiti E3D izvor. Izvorni S3D elementi nisu podržani." : undefined} onPrepare={prepareGroupVariable} onApply={applyGroupVariable} />}
                   <button className="inspector-primary" onClick={() => openDocument("data")}>{selectedBoardIndex !== null ? "Uredi ploču" : "Uredi element"}</button>
                   <div className="inspector-actions" aria-label="Osnovne radnje nad izborom">
                     {selectedBoardIndex === null && <><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° ulijevo" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(-90)}>↶ −90°</button><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° udesno" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(90)}>↷ +90°</button></>}
@@ -1749,7 +1956,7 @@ export function App() {
                     {selectedBoardIndex !== null && selectedBoardCanChange && <button onClick={() => duplicateSelectedBoard(selectedBoardIndex)}>Kopiraj ploču</button>}
                     {selectedBoardIndex !== null && selectedBoardCanChange && selected.boards.length > 1 && <button className="danger" onClick={() => removeSelectedBoard(selectedBoardIndex)}>Ukloni ploču</button>}
                   </div>
-                  {selectedBoardIndex === null && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && <button className="inspector-export" onClick={exportSelectedE3d}>Sačuvaj element kao E3D ↓</button>}
+                  {selectedBoardIndex === null && selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && <button className="inspector-export" onClick={exportSelectedE3d}>Sačuvaj element kao E3D ↓</button>}
                   <details className="inspector-shortcuts"><summary>Kontrole i prečice</summary><p className="inspector-help"><strong>Osnovne kontrole prostorije</strong><span>Klik bira cijeli element</span><span>Ctrl/Shift + klik označava grupu elemenata</span><span>Strelice pomjeraju po X/Z</span><span>Page Up/Down pomjera po Y</span></p></details>
                 </>
               ) : (
@@ -1762,9 +1969,12 @@ export function App() {
         </aside>
 
         <section className="detail-panel drawing-panel desktop-scene">
+    {project && materialReferenceAudit && (materialReferenceAudit.missing.length > 0 || materialReferenceAudit.ambiguous.length > 0) && <div className="desktop-material-notice" role="status"><span>Materijali projekta: {materialReferenceAudit.missing.length} ploča bez pronađenog UID-a · {materialReferenceAudit.ambiguous.length} sa dvosmislenim UID-om.</span><button disabled={documentWindows.includes("data")} onClick={() => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); }}>Provjeri i izaberi zamjenu…</button></div>}
           <div className="desktop-scene-caption"><span>{viewMode === "drawing" ? "Tehnički nacrt" : "Perspektiva"}</span><strong>{project.fileName}</strong></div>
           {viewMode === "drawing" ? (            <ElevationView fileName={project.fileName} elements={project.inspection.elements} selected={selected} groupElements={groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean)} onSelect={selectElement} onToggleGroup={(element) => toggleGroupElement(project.inspection.elements.indexOf(element))} onOpenData={() => openDocument("data")} />) : (            <Suspense fallback={<div className="three-loading"><span /><strong>Pripremam 3D prikaz…</strong></div>}>
               <Room3DView
+                key={corpusRoomCameraSessions.key(project.originalInspection)}
+                cameraScope={project.originalInspection}
                 elements={project.inspection.elements}
                 room={project.inspection.room}
                 selected={selected}
@@ -1798,11 +2008,11 @@ export function App() {
         <span>{error ?? (materialLibrary ? `${materialLibrary.folderName}: ${materialLibrary.catalogCount} kataloga · ${materialLibrary.textureByUid.size} tekstura · ${materialLibrary.ambiguousUids} dvosmislenih UID-a · ${materialLibrary.missingPictures} bez slike` : null) ?? layoutIssues[0]?.message ?? (project.inspection.unknownTopLevelTags.length ? `${project.inspection.unknownTopLevelTags.length} nepoznatih sekcija` : "Struktura prepoznata")}</span>
       </footer>
     </div>
-    </MaterialLibraryContext.Provider>
+    </MaterialTexturesContext.Provider></MaterialLibraryContext.Provider></LocalCorpusContext.Provider>
   );
 }
 
-function WorkspaceGeometryEditor({ element, onUpdate }: { element: CorpusS3dElement; onUpdate(patch: ElementGeometryPatch): void }) {
+function WorkspaceGeometryEditor({ element, onUpdate }: { element: CorpusS3dElement; onUpdate(patch: ElementGeometryPatch): string | void }) {
   const [form, setForm] = useState(() => geometryFormFor(element));
   const [message, setMessage] = useState("");
   useEffect(() => { setForm(geometryFormFor(element)); setMessage(""); }, [element]);
@@ -1818,7 +2028,8 @@ function WorkspaceGeometryEditor({ element, onUpdate }: { element: CorpusS3dElem
     if (entries.some(([, value]) => !value.trim() || !Number.isFinite(Number(value)))) { setMessage("Unesi broj u svako polje."); return; }
     const values = Object.fromEntries(entries.map(([key, value]) => [key, Number(value)])) as Record<keyof GeometryForm, number>;
     if (values.width <= 0 || values.height <= 0 || values.depth <= 0) { setMessage("Dimenzije moraju biti veće od nule."); return; }
-    onUpdate({ position: [values.x, values.y, values.z], width: values.width, height: values.height, depth: values.depth, angle: values.angle, xAngle: values.xAngle, zAngle: values.zAngle });
+    const error = onUpdate({ position: [values.x, values.y, values.z], width: values.width, height: values.height, depth: values.depth, angle: values.angle, xAngle: values.xAngle, zAngle: values.zAngle });
+    if (error) setMessage(error);
   }}>
     <fieldset disabled={!canEdit}><legend>Mjere i položaj</legend>
       {fields.map(([key, label, unit]) => <label key={key}><span>{label}</span><div><input aria-label={label} type="number" required step="any" min={key === "width" || key === "height" || key === "depth" ? 0.001 : undefined} value={form[key]} onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))} /><small>{unit}</small></div></label>)}
@@ -1830,13 +2041,14 @@ function WorkspaceGeometryEditor({ element, onUpdate }: { element: CorpusS3dElem
 }
 
 function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
-  files: readonly File[]; onChooseFolder(): void; onClose(): void; onAdd(sourceFile: string, sourceXml: string): void;
+  files: readonly LibraryElementFile[]; onChooseFolder(): void; onClose(): void; onAdd(sourceFile: string, sourceXml: string): void;
 }) {
   const [query, setQuery] = useState("");
   const [previewBoardIndex, setPreviewBoardIndex] = useState<number | null>(null);
   const [folder, setFolder] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<{ file: File; element: CorpusS3dElement | null; sourceXml: string; error: string | null } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<LibraryElementFile | null>(null);
+  const [preview, setPreview] = useState<{ file: LibraryElementFile; element: CorpusS3dElement | null; sourceXml: string; error: string | null } | null>(null);
+  const [dimensionDraft,setDimensionDraft]=useState<{file:LibraryElementFile;values:Record<"width"|"height"|"depth",string>}|null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => { setFolder(""); setQuery(""); setSelectedFile(null); }, [files]);
   const folders = useMemo(() => {
@@ -1854,10 +2066,21 @@ function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
   const visibleFiles = matches.slice(0, 200);
   const activeFile = selectedFile && visibleFiles.includes(selectedFile) ? selectedFile : visibleFiles[0] ?? null;
   const current = preview?.file === activeFile ? preview : null;
+  const sourceValues={width:String(current?.element?.width??""),height:String(current?.element?.height??""),depth:String(current?.element?.depth??"")};
+  const dimensionValues=dimensionDraft && dimensionDraft.file===current?.file?dimensionDraft.values:sourceValues;
+  const prepared=useMemo(()=>{
+    if(!current?.element)return null;
+    try {
+      const dimensions=dimensionDraft?.file===current.file?Object.fromEntries(Object.entries(dimensionDraft.values).map(([key,value])=>[key,value.trim()?Number(value.replace(",",".")):Number.NaN])) as {width:number;height:number;depth:number}:undefined;
+      return {value:prepareCorpusLibraryDimensions(current.sourceXml,dimensions),error:"",issues:[]};
+    } catch(reason) { return {value:null,error:reason instanceof Error?reason.message:"Mjere nije moguće preračunati.",issues:reason instanceof CorpusLibraryResizeError?reason.issues:[]}; }
+  },[current,dimensionDraft]);
+  const displayElement=prepared?.value?.element??current?.element;
   useEffect(() => {
     let active = true;
     setPreview(null);
     setPreviewBoardIndex(null);
+    setDimensionDraft(null);
     if (activeFile) void activeFile.text().then((sourceXml) => {
       const result = parseCorpusE3d(sourceXml);
       if (result.elements.length !== 1) throw new Error("E3D mora sadržati tačno jedan korijenski element.");
@@ -1880,15 +2103,15 @@ function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
         <nav className="library-folders" aria-label="Folderi biblioteke"><button className={!folder ? "active" : ""} aria-current={!folder ? "true" : undefined} onClick={() => setFolder("")}>▦ Svi elementi <small>{files.length}</small></button>{folders.map((path) => <button key={path} className={folder === path ? "active" : ""} aria-current={folder === path ? "true" : undefined} title={path} style={{ paddingLeft: 12 + (path.split("/").length - 1) * 12 }} onClick={() => setFolder(path)}>▱ {path.split("/").at(-1)}</button>)}</nav>
         <div className="library-choices"><div className="library-result-count">{matches.length} {matches.length === 1 ? "element" : "elemenata"}{matches.length > 200 ? " · prikazano prvih 200, suzi pretragu" : ""}</div><div className="library-list">{visibleFiles.map((file) => <button key={libraryFilePath(file)} className={activeFile === file ? "active" : ""} aria-pressed={activeFile === file} onClick={() => setSelectedFile(file)}><span><strong>{file.name.replace(/\.e3d$/i, "")}</strong><small>{libraryFilePath(file).split("/").slice(0, -1).join(" / ") || "Korijenski folder"}</small></span></button>)}{!visibleFiles.length && <p className="no-results">Nema elemenata. Promijeni pretragu ili folder.</p>}</div></div>
         <section className="library-preview" aria-label="Pregled izabranog elementa" aria-busy={Boolean(activeFile && !current)}>
-          {current?.element ? <><div className="library-preview-title"><h3>{current.element.name || activeFile?.name}</h3><span>{current.element.code || "Bez šifre"}</span></div><Suspense fallback={<div className="element-preview-loading">Pripremam 3D pregled…</div>}><Element3DPreview key={libraryFilePath(current.file)} element={current.element} selectedBoardIndex={previewBoardIndex} onSelectBoard={setPreviewBoardIndex} /></Suspense><dl className="library-preview-dimensions"><div><dt>Širina</dt><dd>{formatNumber(current.element.width)} mm</dd></div><div><dt>Visina</dt><dd>{formatNumber(current.element.height)} mm</dd></div><div><dt>Dubina</dt><dd>{formatNumber(current.element.depth)} mm</dd></div></dl><p className="library-preview-help">Mišem okreni pregled, točkićem približi. Mjere i konstrukciju možeš uređivati nakon dodavanja.</p></> : current?.error ? <div className="library-preview-empty" role="alert"><strong>Pregled nije dostupan</strong><p>{current.error}</p><small>Izaberi drugi element.</small></div> : <div className="library-preview-empty"><strong>{activeFile ? "Učitavam element…" : "Izaberi element iz biblioteke"}</strong><p>Pregled ne dodaje element u projekat.</p></div>}
+          {current?.element ? <><div className="library-preview-title"><h3>{current.element.name || activeFile?.name}</h3><span>{current.element.code || "Bez šifre"}</span></div><Suspense fallback={<div className="element-preview-loading">Pripremam 3D pregled…</div>}><Element3DPreview key={libraryFilePath(current.file)} element={displayElement!} selectedBoardIndex={previewBoardIndex} onSelectBoard={setPreviewBoardIndex} /></Suspense><div className="library-insert-dimensions">{([["width","Širina"],["height","Visina"],["depth","Dubina"]] as const).map(([key,label])=><label key={key}>{label}<div><input aria-label={`${label} prije umetanja`} inputMode="decimal" value={dimensionValues[key]} onChange={event=>setDimensionDraft({file:current.file,values:{...dimensionValues,[key]:event.target.value}})}/><small>mm</small></div></label>)}</div><button className="secondary-button" disabled={!dimensionDraft||dimensionDraft.file!==current.file} onClick={()=>setDimensionDraft(null)}>Vrati izvorne mjere</button><p className="library-preview-help">Mišem okreni pregled, točkićem približi. Promjena mjera računa postojeće formule; dijelovi bez izraza zadržavaju mjere. Bibliotečki fajl ostaje sačuvan.</p>{prepared?.error?<div className="library-resize-error" role="alert"><p>{prepared.error}</p>{prepared.issues.length>0&&<details><summary>Prikaži neriješene izraze ({prepared.issues.length})</summary><ul>{prepared.issues.map(issue=><li key={`${issue.elementPath.join(".")}:${issue.boardIndex}:${issue.field}`}><strong>{issue.elementName} / {issue.boardName??"Element"} · {issue.field}</strong><code>{issue.expression}</code></li>)}</ul></details>}</div>:prepared?.value?.changed?<p className="library-resize-state" role="status">Pregled je preračunat za nove mjere. Umetanje koristi ovu E3D kopiju.</p>:null}</> : current?.error ? <div className="library-preview-empty" role="alert"><strong>Pregled nije dostupan</strong><p>{current.error}</p><small>Izaberi drugi element.</small></div> : <div className="library-preview-empty"><strong>{activeFile ? "Učitavam element…" : "Izaberi element iz biblioteke"}</strong><p>Pregled ne dodaje element u projekat.</p></div>}
         </section>
       </div>
-      <footer><span>{current?.element ? `${current.element.boards.length} ploča · ${current.element.children.length} pod-elemenata` : "E3D biblioteka"}</span><button className="secondary-button" onClick={onClose}>Odustani</button><button className="primary-command" disabled={!current?.element} onClick={() => { if (current?.element) onAdd(libraryFilePath(current.file), current.sourceXml); }}>Dodaj u projekat</button></footer>
+      <footer><span>{current?.element ? `${current.element.boards.length} ploča · ${current.element.children.length} pod-elemenata` : "E3D biblioteka"}</span><button className="secondary-button" onClick={onClose}>Odustani</button><button className="primary-command" disabled={!current?.element || !prepared?.value} onClick={() => { if (current?.element && prepared?.value) onAdd(libraryFilePath(current.file), prepared.value.sourceXml); }}>Dodaj u projekat</button></footer>
     </section>
   </div></DesktopWindow>;
 }
 
-function libraryFilePath(file: File): string {
+function libraryFilePath(file: LibraryElementFile): string {
   return file.webkitRelativePath || file.name;
 }
 
@@ -2188,7 +2411,11 @@ function Metric({ label, value, warning = false, title }: { label: string; value
   return <div className={`metric ${warning ? "metric-warning" : ""}`} title={title}><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function CutListView({ result, consumables, groupResult, groupConsumables, groupCount, onExport, onExportConsumables }: {
+function CutListView({ elements, groupElements, result, consumables, groupResult, groupConsumables, groupCount, onExport, onExportConsumables, csvOptions, onCsvOptionsChange }: {
+  csvOptions: CorpusCutListCsvOptions;
+  onCsvOptionsChange(options: CorpusCutListCsvOptions): void;
+  elements: readonly CorpusS3dElement[];
+  groupElements: readonly CorpusS3dElement[];
   result: CorpusCutListResult;
   consumables: readonly CorpusConsumableItem[];
   groupResult: CorpusCutListResult;
@@ -2202,7 +2429,8 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
   const groupOnly = scope === "group" && groupCount > 0;
   const activeResult = groupOnly ? groupResult : result;
   const activeConsumables = groupOnly ? groupConsumables : consumables;
-  const validBoards = activeResult.totalBoards - activeResult.skippedBoards;
+  const geometryIssues = useMemo(() => inspectCorpusProductionGeometryIssues(groupOnly ? groupElements : elements), [groupOnly,groupElements,elements]);
+  const validBoards = activeResult.totalBoards - activeResult.skippedBoards - activeResult.excludedHiddenBoards;
   return (
     <div className="detail-content cutlist-page">
       <div className="detail-title">
@@ -2210,10 +2438,26 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
         <button className="primary-button" disabled={!activeResult.items.length} title={activeResult.items.length ? "Izvezi prikazanu krojnu listu kao CSV" : "Nema potpunih proizvodnih mjera za CSV izvoz"} onClick={() => onExport(activeResult, groupOnly)}>Izvezi CSV</button>
       </div>
       <div className="cutlist-scope-switch" aria-label="Obuhvat proizvodne liste"><button aria-current={!groupOnly ? "true" : undefined} className={!groupOnly ? "active" : ""} onClick={() => setScope("project")}>Cijeli projekat</button><button aria-current={groupOnly ? "true" : undefined} className={groupOnly ? "active" : ""} disabled={!groupCount} title={groupCount ? "Prikaži proizvodne podatke samo za označene elemente" : "Prvo označi najmanje jedan element u strukturi projekta"} onClick={() => setScope("group")}>Označena grupa ({groupCount})</button></div>
+      <details className="cutlist-csv-options">
+        <summary>Postavke CSV izvoza krojne liste</summary>
+        <p>Razmjena podataka u UTF-8, mjere u milimetrima. Ovo je zbirna lista; Maretta profil i fizičko mapiranje rubova još nisu potvrđeni. Postavke važe i za izvoz krojne liste kroz meni Export, do zatvaranja aplikacije.</p>
+        <div className="cutlist-csv-fields">
+          <label><span>Separator kolona</span><select value={csvOptions.delimiter ?? ";"} onChange={event => onCsvOptionsChange({ ...csvOptions, delimiter: event.target.value as ";" | "," | "\t" })}><option value=";">Tačka-zarez (;)</option><option value=",">Zarez (,)</option><option value={"\t"}>Tabulator</option></select></label>
+          <label><span>Decimalni znak</span><select value={csvOptions.decimalSeparator ?? ","} onChange={event => onCsvOptionsChange({ ...csvOptions, decimalSeparator: event.target.value as "," | "." })}><option value=",">Zarez (600,5)</option><option value=".">Tačka (600.5)</option></select></label>
+          <label className="check-field"><input type="checkbox" checked={csvOptions.includeHeader !== false} onChange={event => onCsvOptionsChange({ ...csvOptions, includeHeader: event.target.checked })} />Prvi red: nazivi kolona</label>
+          <label className="check-field"><input type="checkbox" checked={csvOptions.includeBom !== false} onChange={event => onCsvOptionsChange({ ...csvOptions, includeBom: event.target.checked })} />UTF-8 oznaka (BOM, za Excel)</label>
+        </div>
+        <p>Kolone: materijal, UID materijala, VISINA, DUBINA, debljina, količina, rupe, skrivene, elementi i ploče. Navodnici se dodaju po potrebi.</p>
+        <pre aria-label="Pregled CSV izvoza">{corpusCutListCsv({ ...activeResult, items: activeResult.items.slice(0, 3) }, { ...csvOptions, includeBom: false })}</pre>
+        {activeResult.items.length > 3 && <small>Prikazana su prva tri reda podataka; izvoz sadrži cijeli izabrani obuhvat.</small>}
+      </details>
+      <p className="production-scope-note">Skriveni elementi, njihovi pod-elementi i skrivene ploče ne ulaze u ovu listu ni CSV. Privremeno skrivanje fronti u 3D pregledu ne mijenja proizvodnju. Mjere su završne i ne umanjuju se za debljinu kanta.</p>
+      {geometryIssues.length>0 && <details className="geometry-formula-notice" aria-label="Neriješeni izrazi proizvodnog obuhvata"><summary>Provjeri parametarske mjere: {geometryIssues.length} neriješenih izraza u ovom obuhvatu</summary><p>Lista i CSV koriste trenutno sačuvane mjere. Naš obračun nije razriješio ove izraze; poslije promjene mjera ili varijabli dio konstrukcije može zadržati ranije vrijednosti.</p><ul>{geometryIssues.slice(0,30).map(issue=><li key={`${issue.elementPath.join(".")}:${issue.boardIndex??"element"}:${issue.field}`}><strong>{issue.elementName}{issue.boardName ? ` / ${issue.boardName}` : ""} · {issue.field}</strong><code>{issue.expression}</code>{issue.missingReferences?.length ? <small>Nedostaje: {issue.missingReferences.join(", ")}</small> : null}</li>)}</ul>{geometryIssues.length>30 && <p>Još {geometryIssues.length-30} izraza. Cijeli izvještaj po elementu dostupan je u editoru.</p>}</details>}
       <div className="cutlist-summary">
         <Property label="Ploča sa mjerama" value={String(validBoards)} />
         <Property label="Grupa za krojenje" value={String(activeResult.items.length)} />
         <Property label="Preskočeno bez mjera" value={String(activeResult.skippedBoards)} />
+        <Property label="Izostavljeno skrivenih" value={String(activeResult.excludedHiddenBoards)} />
       </div>
       {activeResult.items.length ? <div className="board-table-wrap cutlist-table-wrap"><table className="board-table cutlist-table">
         <thead><tr><th>Materijal</th><th>VISINA</th><th>DUBINA</th><th>Debljina</th><th>Kom.</th><th>Rupe</th><th>Elementi / ploče</th></tr></thead>
@@ -2226,7 +2470,7 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
           <td>{item.holeCount}</td>
           <td className="cutlist-parts">{item.parts.join(" · ")}</td>
         </tr>)}</tbody>
-      </table></div> : <div className="empty-details"><span>▤</span><h2>Nema ploča za krojnu listu</h2><p>Dodaj E3D element ili napravi osnovni korpus.</p></div>}
+      </table></div> : <div className="empty-details"><span>▤</span><h2>Nema ploča za krojnu listu</h2><p>{activeResult.excludedHiddenBoards > 0 ? "Skriveni dijelovi ostaju u projektu. Uključi potrebne elemente u stablu za proizvodnu listu." : "Dodaj E3D element ili napravi osnovni korpus."}</p></div>}
       <section className="data-section consumables-section">
         <div className="cutlist-section-heading"><div><div className="section-title"><h3>Potrošni materijal i rubne obrade</h3><span>{activeConsumables.length}</span></div><p>TIP, KOMADA i STR0–STR3 prikazani su direktno iz Corpus zapisa.</p></div><button className="secondary-button" disabled={!activeConsumables.length} title={activeConsumables.length ? "Izvezi prikazane potrošne stavke kao CSV" : "U izabranom obuhvatu nema potrošnih stavki"} onClick={() => onExportConsumables(activeConsumables, groupOnly)}>Izvezi potrošni CSV</button></div>
         {activeConsumables.length ? <div className="board-table-wrap"><table className="board-table consumables-table">
@@ -2240,7 +2484,7 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
             <td>{item.sideApplications.join(" / ")}</td>
             <td className="cutlist-parts">{item.sources.join(" · ")}</td>
           </tr>)}</tbody>
-        </table></div> : <p className="empty-copy">Projekat nema POTITEM zapise.</p>}
+        </table></div> : <p className="empty-copy">U ovom proizvodnom obuhvatu nema vidljivih POTITEM zapisa.</p>}
       </section>
       <div className="evidence-warning"><strong>Mjere nisu automatski rotirane niti normalizovane.</strong><span>CSV čuva izvorni Corpus redoslijed VISINA i DUBINA, materijal, broj rupa i trag do elementa. Ploče bez pozitivne tri mjere su jasno preskočene.</span></div>
     </div>
@@ -2389,10 +2633,12 @@ type ElementTreeProps = {
   onSelect(element: CorpusS3dElement): void;
   groupSelection?: readonly number[];
   onToggleGroup?(index: number): void;
+  onSetVisibility?(element: CorpusS3dElement, visible: boolean): void;
+  parentHidden?: boolean;
   depth?: number;
 };
 
-function ElementTree({ elements, query, selected, onSelect, groupSelection = [], onToggleGroup, depth = 0 }: ElementTreeProps) {
+function ElementTree({ elements, query, selected, onSelect, groupSelection = [], onToggleGroup, onSetVisibility, parentHidden = false, depth = 0 }: ElementTreeProps) {
   const normalized = query.trim().toLocaleLowerCase("sr");
   const visible = elements.map((element, index) => ({ element, index }))
     .filter(({ element }) => !normalized || elementMatches(element, normalized));
@@ -2401,7 +2647,7 @@ function ElementTree({ elements, query, selected, onSelect, groupSelection = [],
     <ul className="element-tree">
       {visible.map(({ element, index }) => (
         <li key={`${element.code}-${element.name}-${depth}-${index}`}>
-          <div className="tree-row-wrap">
+          <div className={`tree-row-wrap${parentHidden || element.visible === false ? " tree-row-hidden" : ""}`}>
             <button
               className={selected === element ? "tree-row selected" : "tree-row"}
               style={{ paddingLeft: `${18 + depth * 18}px` }}
@@ -2409,12 +2655,15 @@ function ElementTree({ elements, query, selected, onSelect, groupSelection = [],
             >
               <span className="tree-glyph">{element.children.length ? "◇" : "□"}</span>
               <span className="tree-label"><strong>{element.name || "Neimenovan element"}</strong><small>{element.code || element.className}</small></span>
-              <span className="tree-count">{element.boards.length || ""}</span>
+              <span className="tree-count" title={parentHidden ? "Sakriven nadređenim elementom" : element.visible === false ? "Sakriven element" : undefined}>{parentHidden || element.visible === false ? "—" : element.boards.length || ""}</span>
             </button>
+            <div className="tree-row-controls">
+            {onSetVisibility && <input className="tree-visibility" type="checkbox" aria-label={`Vidljivost elementa ${element.name || "Neimenovan element"}`} checked={element.visible !== false} title={parentHidden ? "Sakriven nadređenim elementom. Ovo polje čuva sopstvenu vidljivost pod-elementa." : "Uključi/isključi element u prikazu i proizvodnim listama. Element ostaje u projektu; Poništi vraća promjenu."} onChange={event => onSetVisibility(element, event.target.checked)} />}
             {depth === 0 && onToggleGroup && <button className={groupSelection.includes(index) ? "tree-multi-toggle active" : "tree-multi-toggle"} aria-label={`${groupSelection.includes(index) ? "Ukloni" : "Dodaj"} ${element.name || "element"} ${groupSelection.includes(index) ? "iz" : "u"} grupni izbor`} aria-pressed={groupSelection.includes(index)} title="Označi za grupno pomjeranje i poravnanje" onClick={() => onToggleGroup(index)}>{groupSelection.includes(index) ? "✓" : "+"}</button>}
+            </div>
           </div>
           {element.children.length > 0 && (
-            <ElementTree elements={element.children} query={query} selected={selected} onSelect={onSelect} depth={depth + 1} />
+            <ElementTree elements={element.children} query={query} selected={selected} onSelect={onSelect} onSetVisibility={onSetVisibility} parentHidden={parentHidden || element.visible === false} depth={depth + 1} />
           )}
         </li>
       ))}
@@ -2443,8 +2692,9 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
   const shapes = elements.map((element) => corpusDrawingShape(element, projection)).filter((shape) => shape !== null);
   const groupBounds = corpusDrawingGroupBounds(groupElements, projection);
 
+  const hiddenCount = elements.filter(element => element.visible === false).length;
   if (!shapes.length) {
-    return <div className="empty-details"><span>⌗</span><h2>Nema geometrije za nacrt</h2><p>Projekat nema elemente sa potpunim X/Y/Z položajem i dimenzijama.</p></div>;
+    return <div className="empty-details"><span>⌗</span><h2>{hiddenCount === elements.length && hiddenCount > 0 ? "Svi elementi su sakriveni" : "Nema geometrije za nacrt"}</h2><p>{hiddenCount === elements.length && hiddenCount > 0 ? "Sakriveni elementi ne ulaze u nacrt ni njegov izvoz. Uključi vidljivost u stablu projekta." : "Vidljivi elementi nemaju potpun X/Y/Z položaj i dimenzije za ovu projekciju."}</p></div>;
   }
 
   const minH = Math.min(0, ...shapes.map(({ bounds }) => bounds.minH));
@@ -2467,7 +2717,7 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
         <div>
           <p className="eyebrow">{labels[0]}</p>
           <h2>{labels[1]}</h2>
-          <span>Dokazani podaci iz S3D fajla · mjere u milimetrima</span>
+          <span>{shapes.length} elemenata u nacrtu{hiddenCount > 0 ? ` · ${hiddenCount} sakrivenih je izostavljeno` : ""} · mjere u milimetrima</span>
         </div>
         <div><div className="view-switch" aria-label="Projekcija nacrta">{(["front", "top", "side"] as const).map((view) => <button key={view} aria-current={projection === view ? "true" : undefined} className={projection === view ? "active" : ""} onClick={() => setProjection(view)}>{view === "front" ? "Prednji" : view === "top" ? "Gornji" : "Bočni"}</button>)}<button onClick={() => downloadText(`${fileName.replace(/\.(?:s3d|e3d)$/i, "")}-${projection === "front" ? "PREDNJI" : projection === "top" ? "GORNJI" : "BOCNI"}-NACRT.svg`, corpusDrawingSvg(elements, projection, selected, groupElements), "image/svg+xml;charset=utf-8")}>Izvezi SVG</button></div><div className="drawing-legend"><span><i className="legend-normal" /> Element</span><span><i className="legend-selected" /> Izabran</span>{groupBounds && <span><i className="legend-group" /> Grupa</span>}</div></div>
       </div>
@@ -2779,7 +3029,7 @@ function GroupTransformEditor({ count, bounds, roomClearances, canTransform, onT
   </section>;
 }
 
-function ElementDetails({ element, room, placementElements, groupSelection, canEdit, canTransformGroup, onTranslateGroup, onPositionGroup, onAlignGroup, onDistributeGroup, onSpaceGroup, onRotateGroup, onContainGroup, onCenterGroup, onPlaceGroupAtRoomSide, onSnapGroup, onDuplicateGroup, onDuplicateGroupGrid, onRemoveGroup, canRemoveGroup, onSetGroupVisibility, onIsolateGroup, onShowAllRoots, onClearGroup, selectedBoardIndex, boardSelection, onBoardSelectionChange, onSelectBoard, onUpdate, onFitToBoards, onUpdateIdentity, onUpdateVariables, onUpdateBoard, onUpdateBoardAppearance, onUpdateBoardHoles, onUpdateBoardContour, onUpdateBoardEdgeBanding, onAddBoard, onRenameBoard, onMoveBoard, onDuplicateBoard, onDuplicateBoardArray, onDuplicateBoardGrid, onTranslateBoards, onDistributeBoards, onAlignBoards, onPlaceBoards, onDuplicateBoards, onRemoveBoards, onApplyBoardAppearance, onSetBoardsVisibility, onDistributeBoardArray, onRemoveBoard, onUndo, onRemoveImported, onDuplicateImported, onExportSelectedE3d, canChangeStructure, canRemoveImported, canExportE3d, canDuplicate, canUndo, onOpenProduction, onAccept, onCancel, canRedo, onRedo, onAddBoards }: {
+function ElementDetails({ element, room, placementElements, groupSelection, canEdit, canTransformGroup, onTranslateGroup, onPositionGroup, onAlignGroup, onDistributeGroup, onSpaceGroup, onRotateGroup, onContainGroup, onCenterGroup, onPlaceGroupAtRoomSide, onSnapGroup, onDuplicateGroup, onDuplicateGroupGrid, onRemoveGroup, canRemoveGroup, onSetGroupVisibility, onIsolateGroup, onShowAllRoots, onClearGroup, selectedBoardIndex, boardSelection, onBoardSelectionChange, onSelectBoard, onUpdate, onFitToBoards, onUpdateIdentity, onUpdateVariables, onUpdateBoard, onUpdateBoardFormulas, formulaRoot, formulaElementPath, canEditFormulas, onUpdateBoardAppearance, onUpdateBoardHoles, onUpdateBoardContour, onUpdateBoardEdgeBanding, onAddBoard, onRenameBoard, onMoveBoard, onDuplicateBoard, onDuplicateBoardArray, onDuplicateBoardGrid, onTranslateBoards, onDistributeBoards, onAlignBoards, onPlaceBoards, onDuplicateBoards, onRemoveBoards, onApplyBoardAppearance, onSetBoardsVisibility, onDistributeBoardArray, onRemoveBoard, onUndo, onRemoveImported, onDuplicateImported, onExportSelectedE3d, canChangeStructure, canRemoveImported, canExportE3d, canDuplicate, canUndo, onOpenProduction, onAccept, onCancel, canRedo, onRedo, onAddBoards }: {
   onAddBoards(specs: readonly CorpusNewBoardSpec[]): boolean;
   canRedo: boolean;
   onRedo(): void;
@@ -2813,11 +3063,15 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   boardSelection: readonly number[];
   onBoardSelectionChange(selection: readonly number[]): void;
   onSelectBoard(boardIndex: number | null): void;
-  onUpdate(patch: ElementGeometryPatch): void;
+  onUpdate(patch: ElementGeometryPatch): string | void;
   onFitToBoards(): boolean;
   onUpdateIdentity(patch: ElementIdentityPatch): void;
-  onUpdateVariables(variables: ElementVariablesPatch): void;
+  onUpdateVariables(variables: ElementVariablesPatch): string | void;
   onUpdateBoard(boardIndex: number, patch: BoardGeometryPatch): void;
+  onUpdateBoardFormulas(boardIndex: number, patch: Readonly<Record<string,string>>): string | void;
+  formulaRoot: CorpusS3dElement;
+  formulaElementPath: readonly number[];
+  canEditFormulas: boolean;
   onUpdateBoardAppearance(boardIndex: number, patch: BoardAppearancePatch): void;
   onUpdateBoardHoles(boardIndex: number, holes: readonly CorpusS3dHole[]): void;
   onUpdateBoardContour(boardIndex: number, points: readonly CorpusStraightContourPoint[]): void;
@@ -2860,9 +3114,9 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   useEffect(() => {
     if (previousBoardStructureKey.current === boardStructureKey) return;
     previousBoardStructureKey.current = boardStructureKey;
-    onBoardSelectionChange([]);
+
     setBoardGroupMessage("");
-  }, [boardStructureKey, onBoardSelectionChange]);
+  }, [boardStructureKey]);
   const materials = useMemo(() => {
     const counts = new Map<string, number>();
     for (const board of element.boards) {
@@ -2871,8 +3125,9 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
     }
     return [...counts.entries()];
   }, [element]);
-  const elementCutList = useMemo(() => buildCorpusCutList([element]), [element]);
-  const elementConsumables = useMemo(() => buildCorpusConsumablesList([element]), [element]);
+  const productionScope = useMemo(() => corpusElementProductionScope(formulaRoot, formulaElementPath), [formulaRoot, formulaElementPath]);
+  const elementCutList = useMemo(() => buildCorpusCutList([productionScope.element]), [productionScope.element]);
+  const elementConsumables = useMemo(() => buildCorpusConsumablesList([productionScope.element]), [productionScope.element]);
   const elementHoleCount = element.boards.reduce((total, board) => total + board.holeCount, 0);
   const elementFrontCount = element.boards.filter((board) => board.frontType !== null).length;
   const groupBounds = useMemo(() => corpusGroupBounds(placementElements, groupSelection), [placementElements, groupSelection]);
@@ -2944,7 +3199,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   }
 
   return (
-    <div className="detail-content element-editor corpus-element-editor" onKeyDownCapture={event => { if (event.key === "Escape" && (editorTab === "curves" || editorTab === "operations" || editorTab === "views")) { event.preventDefault(); event.stopPropagation(); setEditorTab("basic"); } }}>
+    <div className="detail-content element-editor corpus-element-editor" onKeyDownCapture={event => { if (event.key === "Escape" && editorTab !== "basic") { event.preventDefault(); event.stopPropagation(); setEditorTab("basic"); } }}>
       <nav className="element-editor-tabs" aria-label="Grupe funkcija elementa">
         <button aria-current={editorTab === "basic" ? "page" : undefined} className={editorTab === "basic" ? "active" : ""} onClick={() => setEditorTab("basic")}>Osnovni</button>
         <button aria-current={editorTab === "construction" ? "page" : undefined} className={editorTab === "construction" ? "active" : ""} onClick={() => setEditorTab("construction")}>Dodavanje</button>
@@ -2952,6 +3207,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
         <button aria-current={editorTab === "placement" ? "page" : undefined} className={editorTab === "placement" ? "active" : ""} onClick={() => setEditorTab("placement")}>Uređivanje</button>
         <button aria-current={editorTab === "curves" ? "page" : undefined} className={editorTab === "curves" ? "active" : ""} onClick={() => setEditorTab("curves")}>Krivulje</button>
         <button aria-current={editorTab === "operations" ? "page" : undefined} className={editorTab === "operations" ? "active" : ""} onClick={() => setEditorTab("operations")}>Bušenje</button>
+        <button disabled title="Kotiranje u editoru još nije podržano.">Kotiranje</button>
         <button aria-current={editorTab === "materials" ? "page" : undefined} className={editorTab === "materials" ? "active" : ""} onClick={() => setEditorTab("materials")}>Materijali</button>
         <button aria-current={editorTab === "production" ? "page" : undefined} className={editorTab === "production" ? "active" : ""} onClick={() => setEditorTab("production")}>Proizvodnja</button>
         <button aria-current={editorTab === "advanced" ? "page" : undefined} className={editorTab === "advanced" ? "active" : ""} onClick={() => setEditorTab("advanced")}>Napredno</button>
@@ -2960,11 +3216,12 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
       <ElementEditorWorkspace canRedo={canRedo} onRedo={onRedo} onAccept={onAccept} onCancel={onCancel} element={element} selectedBoardIndex={selectedBoardIndex} onSelectBoard={onSelectBoard}
         canEdit={canEdit} canChangeStructure={canChangeStructure} canUndo={canUndo} onUndo={onUndo}
         onAdd={() => setBoardCreatorOpen(true)} onMove={onMoveBoard} onRemove={onRemoveBoard}
-        variables={<ElementVariablesEditor element={element} canEdit={canEdit} canChangeStructure={canChangeStructure} onUpdate={onUpdateVariables} />}
+        variables={<><GeometryFormulaNotice element={formulaRoot} elementPath={formulaElementPath} /><ElementVariablesEditor element={element} formulaRoot={formulaRoot} elementPath={formulaElementPath} canEdit={canEdit} canChangeStructure={canEditFormulas} onUpdate={onUpdateVariables} /></>}
         toolTitle={{ basic: "Osnovni", placement: "Uređivanje", construction: "Dodavanje", materials: "Materijali", variables: "Varijable", operations: "Bušenje", production: "Proizvodnja", advanced: "Napredno", curves: "Krivulje", views: "Pogledi" }[editorTab]}
         toolsOpen={editorTab !== "basic"} onCloseTools={() => setEditorTab("basic")}
         properties={<>
-      {canEdit && selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <BoardGeometryEditor compact element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onRename={onRenameBoard} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} /> : null}
+      {canEdit && selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <><BoardGeometryEditor compact element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onRename={onRenameBoard} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} />
+          <BoardFormulaEditor element={element} rootElement={formulaRoot} elementPath={formulaElementPath} boardIndex={selectedBoardIndex} canEdit={canEditFormulas} onApply={onUpdateBoardFormulas} /></> : null}
       {selectedBoardIndex === null && <><div className="property-grid">
         <Property label="Širina" value={formatMillimeters(element.width)} />
         <Property label="Visina" value={formatMillimeters(element.height)} />
@@ -3032,12 +3289,14 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
             <button disabled={validBoardSelection.length < 2} title={validBoardSelection.length < 2 ? "Označi najmanje dvije ploče za zajedničko postavljanje" : "Centriraj zajednički omotač u elementu"} onClick={() => placeBoardSelection("center")}>Po centru</button>
             <button disabled={validBoardSelection.length < 2} title={validBoardSelection.length < 2 ? "Označi najmanje dvije ploče za zajedničko postavljanje" : "Postavi zajednički omotač uz kraj elementa"} onClick={() => placeBoardSelection("max")}>Uz kraj</button>
           </div>
-          <div className="board-group-appearance">
+          <section className="board-group-appearance" aria-label="Obuhvat grupne primjene izgleda">
+            <p>Na označene ploče prenose se materijal, boja, providnost i vidljivost aktivne ploče. Jedan Poništi vraća primjenu.</p>
+            <details><summary>Označene ploče ({validBoardSelection.length})</summary><ul>{validBoardSelection.map(index => <li key={index}>{index + 1}. {element.boards[index]!.name || `Ploča ${index + 1}`}{index === selectedBoardIndex ? " · izvor izgleda" : ""}</li>)}</ul></details>
             <div><strong>Izgled aktivne ploče</strong><span>{selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}` : "Klikni red ploče koja je izvor izgleda"}</span></div>
             <button className="secondary-button" disabled={validBoardSelection.length < 2 || selectedBoardIndex === null} title={selectedBoardIndex === null ? "Prvo izaberi ploču koja je izvor izgleda" : validBoardSelection.length < 2 ? "Označi najmanje dvije ploče" : "Primijeni materijal i izgled aktivne ploče na označene"} onClick={applyAppearanceToBoardSelection}>Primijeni na označene</button>
             <button className="secondary-button" disabled={validBoardSelection.length < 2} title={validBoardSelection.length < 2 ? "Označi najmanje dvije ploče" : "Prikaži sve označene ploče"} onClick={() => setBoardSelectionVisibility(true)}>Prikaži označene</button>
             <button className="secondary-button" disabled={validBoardSelection.length < 2} title={validBoardSelection.length < 2 ? "Označi najmanje dvije ploče" : "Sakrij sve označene ploče"} onClick={() => setBoardSelectionVisibility(false)}>Sakrij označene</button>
-          </div>
+          </section>
           <div className="board-group-remove"><span>{canChangeStructure ? "Uklanjanje mijenja samo lokalnu radnu kopiju i može se vratiti jednom komandom Poništi." : "Strukturno uklanjanje dostupno je za samostalne, nove i uvezene E3D elemente."}</span><button className="danger-button" disabled={!canChangeStructure || validBoardSelection.length < 2 || validBoardSelection.length >= element.boards.length} title={!canChangeStructure ? "Strukturno uklanjanje nije dostupno za ovaj element" : validBoardSelection.length < 2 ? "Označi najmanje dvije ploče" : validBoardSelection.length >= element.boards.length ? "Element mora zadržati najmanje jednu ploču" : "Ukloni označene ploče iz lokalne radne kopije"} onClick={removeBoardSelection}>Ukloni označene ploče</button></div>
           {boardGroupMessage && <p className="placement-message">{boardGroupMessage}</p>}
         </div>}
@@ -3054,22 +3313,24 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
         <div className="element-material-summary"><div className="section-title"><h3>Svi materijali elementa</h3><span>{materials.length}</span></div>
           {materials.length ? <ul className="material-list">{materials.map(([name, count]) => <li key={name}><span className="material-swatch" /><span>{name}</span><strong>{count}×</strong></li>)}</ul> : <p className="empty-copy">Nema materijala.</p>}
         </div></section>}
-      {editorTab === "variables" && <section className="data-section"><ElementVariablesEditor element={element} canEdit={canEdit} canChangeStructure={canChangeStructure} onUpdate={onUpdateVariables} /></section>}
+      {editorTab === "variables" && <section className="data-section"><ElementVariablesEditor element={element} formulaRoot={formulaRoot} elementPath={formulaElementPath} canEdit={canEdit} canChangeStructure={canEditFormulas} onUpdate={onUpdateVariables} /></section>}
 
       {editorTab === "operations" && <section className="data-section">
         {selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <><div className="active-board-context"><strong>Aktivna ploča</strong><span>{element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`} · {element.boards[selectedBoardIndex]!.holeCount} rupa</span></div>{canEdit && <BoardHoleEditor board={element.boards[selectedBoardIndex]} onUpdate={(holes) => onUpdateBoardHoles(selectedBoardIndex, holes)} />}<BoardMachiningDetails board={element.boards[selectedBoardIndex]} /></> : <p className="empty-copy">Izaberi ploču u lijevom 3D prikazu ili u kartici Konstrukcija da pregledaš njene rupe i obrade.</p>}
         <div className="element-macro-summary">{element.macroLinks.length > 0 ? <MacroLinkDetails links={element.macroLinks} element={element} onApplyHoles={onUpdateBoardHoles} /> : <p className="empty-copy">Ovaj element nema povezane Corpus makroe.</p>}</div>
       </section>}
       {editorTab === "production" && <section className="data-section production-overview">
-        <div className="production-overview-heading"><div><h3>Proizvodni pregled elementa</h3><p>Brza provjera prije otvaranja pune krojne liste projekta.</p></div><button className="primary-button" onClick={onOpenProduction}>Otvori krojnu listu →</button></div>
+        <div className="production-overview-heading"><div><h3>Proizvodni pregled elementa</h3><p>Brza provjera prije otvaranja pune krojne liste projekta.</p></div><button className="primary-button" title="Prihvata sve primijenjene izmjene ove sesije kao jednu sobnu radnju i otvara krojnu listu projekta." onClick={onOpenProduction}>Prihvati i otvori krojnu listu →</button></div>
+        {productionScope.hiddenByAncestor && <p role="status">Nadređeni element je skriven. Ovaj pod-element i njegovi dijelovi ne ulaze u proizvodnu listu. Njihova vlastita oznaka vidljivosti ne poništava skrivanje roditelja.</p>}
         <div className="production-overview-metrics">
           <Property label="Ploče" value={String(element.boards.length)} />
           <Property label="Fronte" value={String(elementFrontCount)} />
           <Property label="Grupe za krojenje" value={String(elementCutList.items.length)} />
+          <Property label="Izostavljeno skrivenih" value={String(elementCutList.excludedHiddenBoards)} />
           <Property label="Rupe" value={String(elementHoleCount)} />
           <Property label="Potrošne stavke" value={String(elementConsumables.length)} />
         </div>
-        {elementCutList.skippedBoards > 0 ? <div className="evidence-warning"><strong>{elementCutList.skippedBoards} ploča nema potpune proizvodne mjere.</strong><span>Te ploče su sačuvane u elementu, ali se ne pojavljuju u krojnoj listi dok mjere ne budu dokazane.</span></div> : <p className="production-ready">Sve ploče elementa imaju upotrebljive mjere za krojnu listu.</p>}
+        {elementCutList.skippedBoards > 0 ? <div className="evidence-warning"><strong>{elementCutList.skippedBoards} ploča nema potpune proizvodne mjere.</strong><span>Te ploče su sačuvane u elementu, ali se ne pojavljuju u krojnoj listi dok mjere ne budu dokazane.</span></div> : <p className="production-ready">Uključene ploče imaju upotrebljive mjere; skriveni dijelovi ne ulaze u proizvodnu listu.</p>}
       </section>}
       {editorTab === "advanced" && <section className="data-section"><div className="section-title"><h3>Napredni i izvorni podaci</h3></div><p className="empty-copy">Ovdje su izdvojene informacije koje nisu dio svakodnevnog modeliranja. Dok nešto nije dokazano iz Corpus formata, ostaje jasno označeno i ne utiče na geometriju.</p>{(element.unknownChildTags.length > 0 || element.boards.some((board) => board.unknownChildTags.length > 0)) && (
         <div className="evidence-warning"><strong>Nepoznata struktura je sačuvana kao upozorenje.</strong><span>Ne tumačimo podatke koje još nismo dokazali.</span></div>
@@ -3081,27 +3342,63 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   );
 }
 
-function ElementVariablesEditor({ element, canEdit, canChangeStructure, onUpdate }: {
+function GeometryFormulaNotice({element,elementPath=[0]}: {element: CorpusS3dElement;elementPath?:readonly number[]}) {
+  const issues = useMemo(() => inspectCorpusGeometryIssues(element).filter(issue=>elementPath.every((part,i)=>issue.elementPath[i]===part)), [element,elementPath]);
+  if (!issues.length) return null;
+  const reasons = { missing: "Nedostaje referenca ili konstrukcioni kontekst", cycle: "Ciklična zavisnost", invalid: "Nepodržan ili neispravan izraz", unresolved: "Zavisnost nije razriješena", value: "Rezultat nije važeći broj za ovo polje" };
+  return <details className="geometry-formula-notice">
+    <summary>Nepreračunati izrazi geometrije ({issues.length})</summary>
+    <p>Za ova polja naš obračun zadržava spremljenu geometriju i izvorni izraz. Promjena varijable ili mjere zato može dati djelimično preračunatu konstrukciju.</p>
+    <ul>{issues.map(issue => <li key={`${issue.elementPath.join(".")}:${issue.boardIndex ?? "element"}:${issue.field}`}>
+      <strong>{issue.elementName || "Element"}{issue.boardName ? ` / ${issue.boardName}` : ""} · {issue.field}</strong>
+      <code>{issue.expression}</code><small>{reasons[issue.reason]}{issue.missingReferences?.length ? ` · Nedostaje: ${issue.missingReferences.join(", ")}` : ""}</small>
+    </li>)}</ul>
+  </details>;
+}
+
+function ElementVariablesEditor({ element, formulaRoot=element, elementPath=[0], canEdit, canChangeStructure, onUpdate, compact = false }: {
+  formulaRoot?: CorpusS3dElement;
+  elementPath?: readonly number[];
+  compact?: boolean;
   element: CorpusS3dElement;
   canEdit: boolean;
   canChangeStructure: boolean;
-  onUpdate(variables: ElementVariablesPatch): void;
+  onUpdate(variables: ElementVariablesPatch): string | void;
 }) {
+  const library = useContext(LocalCorpusContext);
+  const definitions = useMemo(() => corpusVariableDefinitionIndex(library?.variableDefinitions ?? []), [library]);
+  const [variableQuery, setVariableQuery] = useState("");
+  const [variableCategory, setVariableCategory] = useState("");
   const variables = element.variables;
+  const categories = [...new Set(Object.keys(variables).map(name => definitions.get(name.toUpperCase())?.category || "Bez kategorije"))];
   const [draft, setDraft] = useState<Array<{ name: string; value: string }>>(() => Object.entries(variables).map(([name, value]) => ({ name, value })));
   const [message, setMessage] = useState("");
   useEffect(() => {
     setDraft(Object.entries(variables).map(([name, value]) => ({ name, value })));
     setMessage("");
   }, [variables]);
+  const matchesVariableFilter = (name: string) => {
+    const definition = definitions.get(name.toUpperCase());
+    return (!variableCategory || (definition?.category || "Bez kategorije") === variableCategory)
+      && `${name} ${definition?.caption ?? ""} ${definition?.category ?? ""}`.toLocaleLowerCase().includes(variableQuery.trim().toLocaleLowerCase());
+  };
+  const matchingVariables = draft.filter(entry => matchesVariableFilter(entry.name)).length;
   const sourceEntries = Object.entries(variables);
   const changed = JSON.stringify(draft.map(({ name, value }) => [name, value])) !== JSON.stringify(sourceEntries);
-  const contextValues: Record<string, CorpusExpressionValue> = {};
-  const addContext = (name: string, value: number | null) => { if (value !== null && Number.isFinite(value)) contextValues[name] = value; };
-  addContext("X", element.position[0]); addContext("Y", element.position[1]); addContext("Z", element.position[2]);
-  addContext("V", element.height); addContext("S", element.width); addContext("D", element.depth);
-  addContext("VISINA", element.height); addContext("SIRINA", element.width); addContext("DUBINA", element.depth);
-  const analysis = analyzeCorpusAssignments(draft.map(({ name, value }) => ({ name, expression: value })), contextValues);
+  const analysis = useMemo(() => inspectCorpusVariableAssignments(formulaRoot,elementPath,Object.fromEntries(draft.map(({name,value})=>[name,value]))), [formulaRoot,elementPath,draft]);
+
+  function changeValue(index: number, value: string) {
+    const next = draft.map((item, itemIndex) => itemIndex === index ? { ...item, value } : item);
+    setDraft(next);
+    if (!corpusVariableDraftHasSourceNames(variables, next)) {
+      setMessage("Dodavanje, brisanje ili nazivi su izmijenjeni. Sačuvaj varijable za primjenu cijelog skupa.");
+      return;
+    }
+    if (next.some(item => !item.name.trim() || item.name.includes("="))) return;
+    if (new Set(next.map(item => item.name.toUpperCase())).size !== next.length) return;
+    const error = onUpdate(Object.fromEntries(next.map(item => [item.name, item.value])));
+    if (error) setMessage(error);
+  }
 
   function addVariable() {
     const used = new Set(draft.map(({ name }) => name.toUpperCase()));
@@ -3116,19 +3413,36 @@ function ElementVariablesEditor({ element, canEdit, canChangeStructure, onUpdate
     if (names.some((name) => !name || name.includes("="))) return setMessage("Naziv ne smije biti prazan niti sadržati znak =.");
     const normalized = names.map((name) => name.toUpperCase());
     if (new Set(normalized).size !== normalized.length) return setMessage("Nazivi moraju biti jednoznačni bez obzira na velika i mala slova.");
-    onUpdate(Object.fromEntries(draft.map((entry, index) => [names[index]!, entry.value])));
-    setMessage("Varijable su sačuvane u lokalnoj radnoj kopiji.");
+    const error = onUpdate(Object.fromEntries(draft.map((entry, index) => [names[index]!, entry.value])));
+    setMessage(error || "Varijable su sačuvane u lokalnoj radnoj kopiji.");
   }
 
-  return <div className="variable-editor"><div className="section-title"><h3>Varijable</h3><span>{draft.length}</span>{canChangeStructure && <button className="secondary-button" disabled={!canEdit} title={canEdit ? "Dodaj novu E3D varijablu" : "Element je zaključan ili označen kao neurediv"} onClick={addVariable}>Dodaj</button>}</div>
+  return <div className={`variable-editor${compact ? " variable-editor-compact" : ""}`}><div className="section-title"><h3>Varijable</h3><span>{draft.length}</span>{canChangeStructure && <button className="secondary-button" disabled={!canEdit} title={canEdit ? "Dodaj novu E3D varijablu" : "Element je zaključan ili označen kao neurediv"} onClick={addVariable}>Dodaj</button>}</div>
+    {compact && <div className="variable-filters">
+      <input type="search" aria-label="Pretraži konstrukcijske varijable" placeholder="Traži varijablu…" value={variableQuery} onChange={event => setVariableQuery(event.target.value)} />
+      {categories.length > 1 && <select aria-label="Kategorija varijabli" value={variableCategory} onChange={event => setVariableCategory(event.target.value)}><option value="">Sve kategorije</option>{categories.map(category => <option key={category} value={category}>{category}</option>)}</select>}
+    </div>}
+    {compact && matchingVariables === 0 && <p className="empty-copy">Nema varijabli za ovu pretragu i kategoriju.</p>}
     {draft.length ? <>
-      <div className="variable-list">{draft.map((entry, index) => <div className="variable-row" key={`${index}-${sourceEntries[index]?.[0] ?? "nova"}`}>
-        <input aria-label={`Naziv varijable ${index + 1}`} value={entry.name} disabled={!canEdit || !canChangeStructure} onChange={(event) => setDraft((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
-        <input aria-label={`Vrijednost varijable ${entry.name || index + 1}`} value={entry.value} disabled={!canEdit} onChange={(event) => setDraft((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+      <div className="variable-list">{draft.map((entry, index) => {
+        const definition = definitions.get(entry.name.toUpperCase());
+        const selectedOption = definition && corpusVariableOptionValue(definition, entry.value);
+        if (compact && !matchesVariableFilter(entry.name)) return null;
+        return <div className="variable-row" key={`${index}-${sourceEntries[index]?.[0] ?? "nova"}`}>
+        {compact && <label className="compact-variable-name" htmlFor={`workspace-variable-${index}`} title={entry.name}>{definition?.caption || entry.name}<small>{entry.name}{definition?.category ? ` · ${definition.category}` : ""}</small></label>}
+        <input hidden={compact} aria-label={`Naziv varijable ${index + 1}`} value={entry.name} disabled={!canEdit || !canChangeStructure} onChange={(event) => setDraft((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} />
+        {definition && (!compact || definition.options.length > 0) && <section className="variable-definition">
+          {!compact && <small>{definition.category ? `${definition.category} · ` : ""}{definition.caption}</small>}
+          {definition.options.length > 0 && <select aria-label={`Izbor ${definition.caption}`} value={selectedOption ?? ""} disabled={!canEdit} onChange={(event) => changeValue(index, event.target.value)}>
+            {selectedOption === undefined && <option value="" disabled>Trenutni izraz: {entry.value}</option>}
+            {definition.options.map((option) => <option key={`${option.label}-${option.value}`} value={option.value}>{option.label}</option>)}
+          </select>}
+        </section>}
+        <input id={compact ? `workspace-variable-${index}` : undefined} aria-label={`Vrijednost varijable ${entry.name || index + 1}`} value={entry.value} disabled={!canEdit} onChange={(event) => changeValue(index, event.target.value)} />
         <span className={`variable-result ${analysis[index]?.status ?? "invalid"}`}>{formatVariableAnalysis(analysis[index])}</span>
         {canChangeStructure && <button className="icon-button danger" aria-label={`Ukloni varijablu ${entry.name || index + 1}`} disabled={!canEdit} onClick={() => { setDraft((current) => current.filter((_, itemIndex) => itemIndex !== index)); setMessage("Varijabla je označena za uklanjanje. Sačuvaj za primjenu."); }}>×</button>}
-      </div>)}</div>
-      <div className="variable-actions"><small>{canChangeStructure ? "E3D čuva neprekinut VAR0…VARn redoslijed; izrazi ostaju tekst." : "Izvorni S3D dozvoljava samo promjenu postojećih vrijednosti."}</small><button className="secondary-button" disabled={!canEdit || !changed} title={!canEdit ? "Element je zaključan ili označen kao neurediv" : !changed ? "Nema izmjena za čuvanje" : "Sačuvaj varijable u lokalnoj radnoj kopiji"} onClick={save}>Sačuvaj varijable</button></div>
+      </div>; })}</div>
+      <div className="variable-actions"><small>{canChangeStructure ? "Promjene vrijednosti odmah osvježavaju prikaz. Dodavanje i nazive potvrdi čuvanjem." : compact ? "Promjene postojećih vrijednosti odmah se primjenjuju. Poništi vraća prethodnu vrijednost." : "Izvorni S3D dozvoljava samo promjenu postojećih vrijednosti."}</small><button className="secondary-button" disabled={!canEdit || !changed} title={!canEdit ? "Element je zaključan ili označen kao neurediv" : !changed ? "Nema izmjena za čuvanje" : "Sačuvaj varijable u lokalnoj radnoj kopiji"} onClick={save}>Sačuvaj varijable</button></div>
     </> : <><p className="empty-copy">Nema varijabli.</p>{canChangeStructure && <button className="secondary-button" disabled={!canEdit} onClick={addVariable}>Dodaj prvu varijablu</button>}</>}
     {message && <p className="placement-message">{message}</p>}
   </div>;
@@ -3316,6 +3630,9 @@ function BoardEdgeBandingEditor({ board, boardIndex, onUpdate, canChange }: {
   onUpdate(boardIndex: number, spec: CorpusEdgeBandingSpec): void;
   canChange: boolean;
 }) {
+  const local = useContext(LocalCorpusContext);
+  const [edgeQuery, setEdgeQuery] = useState("");
+  const edgeMatches = (local?.edges ?? []).filter(e => (e.name + " " + e.code + " " + e.thickness).toLocaleLowerCase().includes(edgeQuery.toLocaleLowerCase()));
   const existing = board.consumables.find((item) => item.type === "0");
   const [name, setName] = useState(existing?.name || "ABS 1 mm");
   const [materialName, setMaterialName] = useState(existing?.materialName || board.materialName);
@@ -3341,6 +3658,7 @@ function BoardEdgeBandingEditor({ board, boardIndex, onUpdate, canChange }: {
       <summary><span>Rubna obrada</span><small>{existing ? existing.sides.filter(Boolean).length : 0} od 4 ivice</small></summary>
       <p>STR0–STR3 su izvorne Corpus oznake ivica. Ne prevodimo ih u „prednja/lijeva“ dok smjer nije dokazan za svaku orijentaciju ploče.</p>
       {!canChange && <p className="editor-readonly-note">Rubna obrada se može mijenjati na dodanim, generisanim i udvostručenim elementima.</p>}
+      {local && <div className="edge-form"><label><span>Traži kant traku ({local.edges.length})</span><input disabled={!canChange} value={edgeQuery} onChange={e => setEdgeQuery(e.target.value)} placeholder="Šifra, dekor ili debljina…" /></label><label><span>Kant traka iz Corpusa</span><select disabled={!canChange} value="" onChange={e => { const edge = edgeMatches[Number(e.target.value)]; if (edge) { setName(edge.group); setMaterialName(edge.materialUid); setMaterialUid(edge.materialUid); setUid(edge.groupUid); } }}><option value="">Izaberi traku…</option>{edgeMatches.map((e,i) => <option key={e.source+":"+i} value={i}>{e.thickness} mm · {e.code} · {e.name} · {e.width ?? "?"} mm{e.available ? "" : " · nema na stanju"}</option>)}</select></label></div>}
       <div className="edge-form">
         <label><span>Naziv trake</span><input value={name} disabled={!canChange} onChange={(event) => setName(event.target.value)} /></label>
         <label><span>Materijal</span><input value={materialName} disabled={!canChange} onChange={(event) => setMaterialName(event.target.value)} /></label>
@@ -3643,22 +3961,8 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
   }
 
   function apply() {
-    const diameter = Number(draft.diameter);
-    const depth = Number(draft.depth);
-    const plane = Number(draft.plane);
-    const angle = Number(draft.angle);
-    if (!draft.name.trim()) return setMessage("Upiši naziv rupe.");
-    if (!draft.xExpression.trim() || !draft.yExpression.trim()) return setMessage("X i Y položaj ne mogu biti prazni.");
-    if (![diameter, depth].every((value) => Number.isFinite(value) && value > 0)) return setMessage("Prečnik i dubina moraju biti veći od nule.");
-    if (![plane, angle].every(Number.isFinite)) return setMessage("Ravan i ugao moraju biti brojevi.");
-    const previous = selectedHole;
-    const hole: CorpusS3dHole = {
-      groupType: previous?.groupType || "GRUPA14",
-      name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
-      diameter, depth, plane, angle,
-      machiningMode: previous?.machiningMode ?? null,
-      machining: previous ? { ...previous.machining } : {},
-    };
+    const hole = holeFromDraft(draft, selectedHole);
+    if (typeof hole === "string") return setMessage(hole);
     const holes = selectedIndex === null ? [...board.holes, hole] : board.holes.map((item, index) => index === selectedIndex ? hole : item);
     onUpdate(holes);
     setSelectedIndex(selectedIndex === null ? holes.length - 1 : selectedIndex);
@@ -3674,17 +3978,8 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
   }
 
   function applyPattern() {
-    const diameter = Number(draft.diameter);
-    const depth = Number(draft.depth);
-    const plane = Number(draft.plane);
-    const angle = Number(draft.angle);
-    if (!draft.name.trim() || !draft.xExpression.trim() || !draft.yExpression.trim()) return setMessage("Popuni naziv i početni X/Y položaj.");
-    if (![diameter, depth].every((value) => Number.isFinite(value) && value > 0)) return setMessage("Prečnik i dubina moraju biti veći od nule.");
-    if (![plane, angle].every(Number.isFinite)) return setMessage("Ravan i ugao moraju biti brojevi.");
-    const template: CorpusS3dHole = {
-      groupType: selectedHole?.groupType || "GRUPA14", name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
-      diameter, depth, plane, angle, machiningMode: selectedHole?.machiningMode ?? null, machining: selectedHole ? { ...selectedHole.machining } : {},
-    };
+    const template = holeFromDraft(draft, selectedHole);
+    if (typeof template === "string") return setMessage(template);
     try {
       const pattern = createCorpusLinearHolePattern(template, Number(patternCount), Number(patternSpacing), patternAxis);
       const holes = selectedIndex === null
@@ -3744,6 +4039,7 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
     <div className="board-editor hole-editor">
       <div className="section-title"><h3>Ručno bušenje</h3><span>{board.holes.length} rupa</span></div>
       <p>Osnovna operacija bez makroa. Položaj prihvata broj ili Corpus izraz, npr. <code>B/2</code> i <code>L/2-32</code>.</p>
+      {[2, 3, 4, 5].includes(Number(draft.plane)) && <p className="evidence-note" role="status" aria-label="Status 3D prikaza bušenja">Ploha {Number(draft.plane)}: 3D prikazuje orijentacioni narandžasti simbol. Njegov položaj je približan; smjer bušenja i fizički rez za ovu plohu još nisu potvrđeni. Izvorna ploha i parametri ostaju sačuvani pri izvozu.</p>}
       <div className="hole-editor-toolbar">
         <select aria-label="Izabrana rupa" value={selectedIndex ?? "new"} onChange={(event) => event.target.value === "new" ? startNew() : select(Number(event.target.value))}>
           <option value="new">+ Nova rupa</option>
@@ -3813,36 +4109,26 @@ function holeDraft(hole: CorpusS3dHole | null) {
   };
 }
 
-function holeFromDraft(draft: ReturnType<typeof holeDraft>, previous: CorpusS3dHole | null): CorpusS3dHole | string {
-  const diameter = Number(draft.diameter);
-  const depth = Number(draft.depth);
-  const plane = Number(draft.plane);
-  const angle = Number(draft.angle);
-  if (!draft.name.trim() || !draft.xExpression.trim() || !draft.yExpression.trim()) return "Popuni naziv i početni X/Y položaj.";
-  if (![diameter, depth].every((value) => Number.isFinite(value) && value > 0)) return "Prečnik i dubina moraju biti veći od nule.";
-  if (![plane, angle].every(Number.isFinite)) return "Ravan i ugao moraju biti brojevi.";
-  return {
-    groupType: previous?.groupType || "GRUPA14", name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
-    diameter, depth, plane, angle, machiningMode: previous?.machiningMode ?? null, machining: previous ? { ...previous.machining } : {},
-  };
-}
 
 function ElementIdentityEditor({ element, onUpdate }: { element: CorpusS3dElement; onUpdate(patch: ElementIdentityPatch): void }) {
   const [name, setName] = useState(element.name);
   const [code, setCode] = useState(element.code);
   const [className, setClassName] = useState(element.className);
+  const [description, setDescription] = useState(element.description ?? "");
+  const [note, setNote] = useState(element.note ?? "");
   const [visible, setVisible] = useState(element.visible !== false);
   const [editable, setEditable] = useState(element.editable !== false);
   const [locked, setLocked] = useState(element.locked === true);
   const [message, setMessage] = useState("");
   useEffect(() => {
     setName(element.name); setCode(element.code); setClassName(element.className);
+    setDescription(element.description ?? ""); setNote(element.note ?? "");
     setVisible(element.visible !== false); setEditable(element.editable !== false); setLocked(element.locked === true); setMessage("");
   }, [element]);
 
   function apply() {
     if (!name.trim()) return setMessage("Naziv elementa ne može biti prazan.");
-    onUpdate({ name: name.trim(), code: code.trim(), className: className.trim(), visible, editable, locked });
+    onUpdate({ name: name.trim(), code: code.trim(), className: className.trim(), description, note, visible, editable, locked });
     setMessage("Identitet i stanje elementa su primijenjeni u radnoj kopiji.");
   }
 
@@ -3854,6 +4140,8 @@ function ElementIdentityEditor({ element, onUpdate }: { element: CorpusS3dElemen
         <label><span>Naziv</span><input aria-label="Naziv elementa" value={name} onChange={(event) => setName(event.target.value)} /></label>
         <label><span>Šifra</span><input aria-label="Šifra elementa" value={code} onChange={(event) => setCode(event.target.value)} /></label>
         <label><span>Klasa</span><input aria-label="Klasa elementa" value={className} onChange={(event) => setClassName(event.target.value)} /></label>
+        <label className="element-text-field"><span>Opis</span><textarea aria-label="Opis elementa" rows={2} value={description} onChange={event => setDescription(event.target.value)} /></label>
+        <label className="element-text-field"><span>Napomena</span><textarea aria-label="Napomena elementa" rows={3} value={note} onChange={event => setNote(event.target.value)} /></label>
         <label className="check-field"><input type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} /><span>Vidljiv element</span></label>
         <label className="check-field"><input type="checkbox" checked={editable} onChange={(event) => setEditable(event.target.checked)} /><span>Dozvoljeno uređivanje</span></label>
         <label className="check-field"><input type="checkbox" checked={locked} onChange={(event) => setLocked(event.target.checked)} /><span>Zaključan element</span></label>
@@ -3867,7 +4155,7 @@ function ElementPlacementEditor({ element, room, elements, onUpdate }: {
   element: CorpusS3dElement;
   room: CorpusS3dRoom;
   elements: readonly CorpusS3dElement[];
-  onUpdate(patch: ElementGeometryPatch): void;
+  onUpdate(patch: ElementGeometryPatch): string | void;
 }) {
   const targets = elements.filter((candidate) => candidate !== element);
   const [targetIndex, setTargetIndex] = useState("0");
@@ -4045,7 +4333,7 @@ type GeometryForm = {
 function ElementGeometryEditor({ element, canEdit, onUpdate, onFitToBoards, onUndo, onRemoveImported, onDuplicateImported, onExportSelectedE3d, canRemoveImported, canExportE3d, canDuplicate, canUndo }: {
   element: CorpusS3dElement;
   canEdit: boolean;
-  onUpdate(patch: ElementGeometryPatch): void;
+  onUpdate(patch: ElementGeometryPatch): string | void;
   onFitToBoards(): boolean;
   onUndo(): void;
   onRemoveImported(): void;
@@ -4082,7 +4370,7 @@ function ElementGeometryEditor({ element, canEdit, onUpdate, onFitToBoards, onUn
       setMessage("Dimenzije moraju biti veće od nule.");
       return;
     }
-    onUpdate({
+    const error = onUpdate({
       position: [values.x, values.y, values.z],
       width: values.width,
       height: values.height,
@@ -4091,7 +4379,7 @@ function ElementGeometryEditor({ element, canEdit, onUpdate, onFitToBoards, onUn
       xAngle: values.xAngle,
       zAngle: values.zAngle,
     });
-    setMessage("Izmjena je primijenjena samo na lokalnu radnu kopiju.");
+    setMessage(error || "Izmjena je primijenjena samo na lokalnu radnu kopiju.");
   }
 
   function fitToBoards() {
@@ -4314,6 +4602,10 @@ function BoardAppearanceEditor({ board, boardIndex, onUpdate }: {
   boardIndex: number;
   onUpdate(boardIndex: number, patch: BoardAppearancePatch): void;
 }) {
+  const local = useContext(LocalCorpusContext);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const records = useMemo(() => local?.catalogs.flatMap(c => c.records) ?? [], [local]);
+  const matches = records.filter(r => (r.name + " " + r.uid + " " + r.sourceCatalog).toLocaleLowerCase().includes(catalogQuery.toLocaleLowerCase())).slice(0, 100);
   const [materialName, setMaterialName] = useState(board.materialName);
   const [materialUid, setMaterialUid] = useState(board.materialUid);
   const [color, setColor] = useState(colorToHex(board.color));
@@ -4335,6 +4627,8 @@ function BoardAppearanceEditor({ board, boardIndex, onUpdate }: {
   return (
     <div className="appearance-editor">
       <div className="section-title"><h3>Materijal i izgled</h3><span>3D</span></div>
+      {local && <div className="appearance-fields"><label><span>Traži dekor ({records.length})</span><input type="search" value={catalogQuery} onChange={e => setCatalogQuery(e.target.value)} placeholder="Naziv ili šifra dekora…" /></label>
+        <label><span>Izaberi dekor iz Corpusa</span><select value="" onChange={e => { const record = matches[Number(e.target.value)]; if (record) { setMaterialName(record.name); setMaterialUid(record.uid); const raw = record.fields.BOJA?.[0]; if (raw && Number.isFinite(Number(raw))) setColor(colorToHex(Number(raw))); } }}><option value="">Izaberi dekor…</option>{matches.map((r,i) => <option key={r.sourceCatalog+":"+r.recordIndex} value={i}>{r.name} · {r.uid} · {r.sourceCatalog}</option>)}</select></label><small>Prikazano do 100 rezultata; suzi pretragu. Izbor potvrdi dugmetom Primijeni izgled.</small></div>}
       <div className="appearance-fields">
         <label><span>Naziv materijala</span><input value={materialName} onChange={(event) => setMaterialName(event.target.value)} /></label>
         <label><span>UID materijala</span><input value={materialUid} onChange={(event) => setMaterialUid(event.target.value)} /></label>
@@ -4354,9 +4648,9 @@ function BoardMaterialPreview({ board }: { board: CorpusS3dBoard }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   useEffect(() => {
     if (resolution?.kind !== "ready") { setImageUrl(null); return; }
-    const url = URL.createObjectURL(resolution.source.file);
+    const url = resolution.source.url ?? (resolution.source.file ? URL.createObjectURL(resolution.source.file) : null);
     setImageUrl(url);
-    return () => URL.revokeObjectURL(url);
+    return () => { if (url && !resolution.source.url) URL.revokeObjectURL(url); };
   }, [resolution]);
 
   let status = "Učitaj lokalni elmtex folder da provjeriš tačan kataloški materijal.";
@@ -4446,4 +4740,27 @@ function downloadText(fileName: string, contents: string, type: string) {
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function CorpusScriptLibrary({library,onClose}: {library:LocalCorpusLibrary;onClose():void}) {
+  const [query,setQuery]=useState("");
+  const files=(library.scripts ?? []).filter(p=>p.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const [selected,setSelected]=useState("");
+  const active=files.includes(selected)?selected:files[0] ?? "";
+  const [source,setSource]=useState<{path:string;text:string} | null>(null);
+  useEffect(()=> {
+    let current=true; setSource(null);
+    if(active) void fetch(localCorpusUrl(active)).then(async response=> {
+      if(!response.ok) throw new Error("Izvor nije dostupan.");
+      return decodeCorpusText(new Uint8Array(await response.arrayBuffer()));
+    }).then(text=>{if(current)setSource({path:active,text});}).catch(reason=>{if(current)setSource({path:active,text:String(reason)});});
+    return ()=>{current=false;};
+  },[active]);
+  const missing=(library.scriptEntries ?? []).filter(e=>!e.resolved);
+  return <DesktopWindow id="scripts" title="Corpus skripte" className="desktop-library-window" onClose={onClose} initialMaximized><section className="library-panel macro-library-panel" aria-label="Biblioteka Corpus skripti">
+    <header><div><h2>Skripte i meniji</h2><p>{library.scripts?.filter(p=>/\.cps$/i.test(p)).length} izvora · {library.scriptEntries?.length ?? 0} stavki menija · {missing.length} bez lokalnog izvora</p></div><button className="secondary-button" style={{fontSize:14,width:"auto",height:"auto",flexShrink:0}} onClick={onClose}>Zatvori skripte</button></header>
+    <label className="search-box"><input aria-label="Pretraga skripti" placeholder="Traži skriptu ili meni…" value={query} onChange={e=>setQuery(e.target.value)} /></label>
+    <div className="macro-library-body"><div className="library-list">{files.map(p=><button key={p} aria-current={active===p?"true":undefined} onClick={()=>setSelected(p)}>{p}</button>)}</div><div className="macro-library-detail"><h3>{active}</h3><p>Pregled izvornog koda.</p><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{source?.path===active?source.text:"Učitavam…"}</pre></div></div>
+    <details><summary>Stavke menija bez lokalnog izvora ({missing.length})</summary><ul>{missing.map((e,i)=><li key={e.menu+":"+i}>{e.name} — {e.script} ({e.menu})</li>)}</ul></details>
+  </section></DesktopWindow>;
 }

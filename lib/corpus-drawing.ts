@@ -33,10 +33,11 @@ export function corpusDrawingSpans(shape: Pick<CorpusDrawingShape, "bounds">): C
   };
 }
 
-/** Zajedničke granice najmanje dva potpuno projektovana elementa. */
+/** Zajedničke granice najmanje dva vidljiva, potpuno projektovana elementa. */
 export function corpusDrawingGroupBounds(elements: readonly CorpusS3dElement[], projection: CorpusDrawingProjection): CorpusDrawingBounds | null {
-  if (elements.length < 2) return null;
-  const shapes = elements.map((element) => corpusDrawingShape(element, projection));
+  const visible = elements.filter(element => element.visible !== false);
+  if (visible.length < 2) return null;
+  const shapes = visible.map((element) => corpusDrawingShape(element, projection));
   if (shapes.some((shape) => shape === null)) return null;
   const measured = shapes.filter((shape): shape is CorpusDrawingShape => shape !== null);
   return {

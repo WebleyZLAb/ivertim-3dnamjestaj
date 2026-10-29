@@ -9,3 +9,9 @@ recordings/
 
 # Lokalne Windows precice sa apsolutnim putanjama
 *.lnk
+
+# Privatne lokalne Corpus biblioteke
+public/local-corpus/
+
+# Ostali lokalni Corpus podaci i veliki modeli
+.local-corpus-archive/

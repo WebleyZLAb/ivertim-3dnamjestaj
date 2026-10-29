@@ -35,6 +35,7 @@ export interface CorpusS3dMacroLink {
 }
 
 export interface CorpusS3dBoard {
+  formulas?: Readonly<Record<string, string>>;
   name: string;
   boardType: number | null;
   frontType: number | null;
@@ -72,6 +73,8 @@ export interface CorpusS3dCurvePoint {
 }
 
 export interface CorpusS3dHole {
+  /** Original occurrence within groupType, retained when editing or copying a hole. */
+  sourceIndex?: number;
   groupType: string;
   name: string;
   xExpression: string;
@@ -85,6 +88,9 @@ export interface CorpusS3dHole {
 }
 
 export interface CorpusS3dElement {
+  description?: string;
+  note?: string;
+  formulas?: Readonly<Record<string, string>>;
   name: string;
   code: string;
   className: string;
@@ -124,6 +130,8 @@ const parser = new XMLParser({
   parseTagValue: false,
   trimValues: false,
   allowBooleanAttributes: false,
+  // Decode numeric XML character references used by multiline attributes.
+  htmlEntities: true,
 });
 
 const KNOWN_TOP_LEVEL_TAGS = new Set([
@@ -242,6 +250,9 @@ function parseElement(element: XmlRecord): CorpusS3dElement {
 
   return {
     name: text(element["@_ENAME"]),
+    description: text(element["@_EOPIS"]),
+    note: text(element["@_ENAPOMENA"]),
+    formulas: Object.fromEntries(["EXF", "EYF", "EZF", "EHF", "ESF", "EDF", "EKXF", "EKYF", "EKZF"].map(key => [key, text(element["@_" + key])]).filter(([, value]) => value)),
     code: text(element["@_ESIFRA"]),
     className: text(element["@_ECLAS"]),
     position: [numeric(element["@_EXPOX"]), numeric(element["@_EYPOS"]), numeric(element["@_EZPOS"])],
@@ -310,6 +321,7 @@ function parseBoard(board: XmlRecord): CorpusS3dBoard {
 
   return {
     name: text(board["@_DNAME"]),
+    formulas: Object.fromEntries(["XF", "YF", "ZF", "HF", "SF", "DF", "KXF", "KYF", "KZF"].map(key => [key, text(board["@_" + key])]).filter(([, value]) => value)),
     boardType: numeric(board["@_TIPDASKE"]),
     frontType: numeric(board["@_TIPFRONTE"]),
     position: [numeric(board["@_DXPOS"]), numeric(board["@_DYPOS"]), numeric(board["@_DZPOS"])],
@@ -380,10 +392,11 @@ function parseHoles(container: XmlRecord): CorpusS3dHole[] {
   const holes: CorpusS3dHole[] = [];
   for (const [groupType, value] of Object.entries(container)) {
     if (!/^GRUPA\d+$/i.test(groupType)) continue;
-    for (const entry of asArray(value)) {
+    for (const [sourceIndex, entry] of asArray(value).entries()) {
       const hole = asRecord(entry);
       const machining = asRecord(hole.RAS);
       holes.push({
+        sourceIndex,
         groupType,
         name: text(hole["@_RNA"]),
         xExpression: text(hole["@_RXP"]),

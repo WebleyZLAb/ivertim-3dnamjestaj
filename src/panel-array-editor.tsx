@@ -1,28 +1,32 @@
 import { useMemo, useState } from "react";
 import type { CorpusS3dElement } from "../lib/corpus-s3d";
 import type { CorpusNewBoardSpec } from "../lib/corpus-s3d-writer";
-import { corpusPanelArray, estimateCorpusPanelOpening, type CorpusPanelArraySpec } from "../lib/corpus-panel-array";
+import { corpusPanelArray, corpusPanelOpeningFormulas, estimateCorpusPanelOpening, type CorpusPanelArraySpec } from "../lib/corpus-panel-array";
 import { Icon } from "./iconsax";
 
 export function PanelArrayEditor({ element, canEdit, onCreate }: { element: CorpusS3dElement; canEdit: boolean; onCreate(boards: readonly CorpusNewBoardSpec[]): boolean }) {
-  const template = element.boards.find(board => board.direction === 2) ?? element.boards[0];
+  const template = element.boards.find(board => board.visible !== false && board.direction === 2) ?? element.boards.find(board => board.visible !== false) ?? element.boards[0];
   const initialThickness = template?.thickness ?? 18;
-  const initialOpening = estimateCorpusPanelOpening(element, initialThickness);
+  const initialOpening = useMemo(() => estimateCorpusPanelOpening(element, initialThickness), [element, initialThickness]);
+  const estimatedOpening = useMemo(() => Object.fromEntries(Object.entries(initialOpening).map(([key, value]) => [key, String(value)])) as Record<keyof CorpusPanelArraySpec['opening'], string>, [initialOpening]);
   const [kind, setKind] = useState<CorpusPanelArraySpec['kind']>('shelves');
   const [count, setCount] = useState('4');
   const [thickness, setThickness] = useState(String(initialThickness));
   const [frontInset, setFrontInset] = useState('20');
-  const [opening, setOpening] = useState(() => Object.fromEntries(Object.entries(initialOpening).map(([key, value]) => [key, String(value)])) as Record<keyof CorpusPanelArraySpec['opening'], string>);
+  const [manualOpening, setManualOpening] = useState<Record<keyof CorpusPanelArraySpec['opening'], string> | null>(null);
+  const opening = manualOpening ?? estimatedOpening;
+  const [followOpening, setFollowOpening] = useState(true);
+  const openingFormulas = useMemo(() => corpusPanelOpeningFormulas(element, initialThickness), [element, initialThickness]);
   const [custom, setCustom] = useState(false);
   const [offsets, setOffsets] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const number = (value: string) => value.trim() ? Number(value.replace(',', '.')) : Number.NaN;
   const preview = useMemo(() => {
     try {
-      const boards = corpusPanelArray({ kind, count: number(count), thickness: number(thickness), frontInset: number(frontInset), opening: Object.fromEntries(Object.entries(opening).map(([key, value]) => [key, number(value)])) as CorpusPanelArraySpec['opening'], offsets: custom ? offsets.map(number) : undefined }, template);
+      const boards = corpusPanelArray({ openingFormulas: followOpening && !manualOpening ? openingFormulas ?? undefined : undefined, kind, count: number(count), thickness: number(thickness), frontInset: number(frontInset), opening: Object.fromEntries(Object.entries(opening).map(([key, value]) => [key, number(value)])) as CorpusPanelArraySpec['opening'], offsets: custom ? offsets.map(number) : undefined }, template);
       return { boards, error: '' };
     } catch (error) { return { boards: [], error: error instanceof Error ? error.message : 'Provjeri raspored.' }; }
-  }, [kind, count, thickness, frontInset, opening, custom, offsets, template]);
+  }, [kind, count, thickness, frontInset, opening, custom, offsets, template, followOpening, manualOpening, openingFormulas]);
   function enableCustom() {
     if (!custom) setOffsets(preview.boards.map(board => String(Number(((kind === 'shelves' ? board.position[1] : board.position[0]) - number(kind === 'shelves' ? opening.y : opening.x)).toFixed(3)))));
     setCustom(value => !value); setMessage('');
@@ -30,7 +34,9 @@ export function PanelArrayEditor({ element, canEdit, onCreate }: { element: Corp
   return <section className="panel-array-editor data-section">
     <div className="section-title"><h3>Police i pregrade</h3><span>jedna radnja</span></div>
     <div className="panel-array-main-fields"><label>Vrsta<select aria-label="Vrsta novih ploča" value={kind} onChange={event => { setKind(event.target.value as CorpusPanelArraySpec['kind']); setCustom(false); }}><option value="shelves">Police</option><option value="dividers">Pregrade</option></select></label><label>Broj<input aria-label="Broj novih ploča" type="number" min="1" max="50" value={count} onChange={event => { setCount(event.target.value); setCustom(false); }} /></label><label>Debljina (mm)<input aria-label="Debljina novih ploča" inputMode="decimal" value={thickness} onChange={event => setThickness(event.target.value)} /></label><label>Uvlačenje (mm)<input aria-label="Uvlačenje novih ploča" inputMode="decimal" value={frontInset} onChange={event => setFrontInset(event.target.value)} /></label></div>
-    <details><summary>Otvor za raspored — provjeri početne mjere</summary><p>Koordinate su lokalne u elementu. Početne mjere su procjena prema krajnjim bokovima, horizontalnim pločama i unutrašnjoj ravni leđa.</p><div className="panel-array-opening">{([['x', 'Početak X'], ['y', 'Početak Y'], ['z', 'Početak Z'], ['width', 'Širina otvora'], ['height', 'Visina otvora'], ['depth', 'Dubina otvora']] as const).map(([key, label]) => <label key={key}>{label}<input aria-label={label} inputMode="decimal" value={opening[key]} onChange={event => setOpening(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div></details>
+    <details><summary>Otvor za raspored — provjeri početne mjere</summary><p>Koordinate su lokalne u elementu. Procjena prati vidljive bokove, horizontalne ploče i unutrašnju ravan aktivnih leđa. Ručno izmijenjene mjere ostaju sačuvane dok ne izabereš ponovnu procjenu.</p><div className="panel-array-opening">{([['x', 'Početak X'], ['y', 'Početak Y'], ['z', 'Početak Z'], ['width', 'Širina otvora'], ['height', 'Visina otvora'], ['depth', 'Dubina otvora']] as const).map(([key, label]) => <label key={key}>{label}<input aria-label={label} inputMode="decimal" value={opening[key]} onChange={event => setManualOpening(current => ({ ...(current ?? estimatedOpening), [key]: event.target.value }))} /></label>)}</div><button className="secondary-button" onClick={() => { setManualOpening(null); setMessage('Otvor je ponovo procijenjen prema aktivnim pločama.'); }}>Ponovo procijeni otvor</button><small role="status">{manualOpening ? 'Ručne mjere otvora' : 'Automatska procjena prema aktivnim pločama'}</small></details>
+    <label className="panel-array-custom"><input type="checkbox" checked={followOpening && !manualOpening && Boolean(openingFormulas)} disabled={Boolean(manualOpening) || !openingFormulas} onChange={event => setFollowOpening(event.target.checked)} />Prati promjenu mjera pomoću formula</label>
+    <p>{manualOpening ? "Ručno zadani otvor čuva fiksne mjere." : !openingFormulas ? "Granice otvora nemaju jednoznačna imena za formule; raspored čuva fiksne mjere." : followOpening ? "Formule prate iste granične ploče otvora. Jednaki razmaci se ponovo računaju; pojedinačne pozicije ostaju udaljenosti od početka otvora. Izbor druge konstrukcije leđa traži novu provjeru otvora. Formule odbijaju mjere pri kojima raspored ne može stati." : "Raspored čuva trenutne mjere i pozicije."}</p>
     <label className="panel-array-custom"><input type="checkbox" checked={custom} disabled={!custom && !preview.boards.length} onChange={enableCustom} />Pojedinačne pozicije od početka otvora</label>
     <div className="panel-array-positions">{(custom ? offsets : preview.boards.map(board => String(Number(((kind === 'shelves' ? board.position[1] : board.position[0]) - number(kind === 'shelves' ? opening.y : opening.x)).toFixed(3))))).map((offset, index) => <label key={index}>{kind === 'shelves' ? 'Polica' : 'Pregrada'} {index + 1}<input aria-label={`Pozicija nove ploče ${index + 1}`} value={offset} readOnly={!custom} onChange={event => setOffsets(current => current.map((value, row) => row === index ? event.target.value : value))} /><small>mm</small></label>)}</div>
     {preview.error && <p className="error-message" role="alert">{preview.error}</p>}

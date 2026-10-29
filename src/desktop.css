@@ -134,3 +134,108 @@
 .corpus-editor-tool-content .primary-button,.corpus-editor-tool-content .secondary-button { padding:6px 8px;font-size:10px; }
 .corpus-editor-tool-content input,.corpus-editor-tool-content select { max-width:100%; }
 .corpus-editor-tool-content .panel-array-positions label { width:calc(50% - 4px); }
+
+/* Konstrukcijske varijable dostupne bez otvaranja editora elementa. */
+.inspector-variables { margin:10px 0; border:1px solid #bfd0dd; background:#edf4f9; }
+.inspector-variables > summary { padding:8px; font-size:11px; font-weight:600; cursor:pointer; }
+.inspector-variables > summary span { float:right; color:#5a7589; }
+.inspector-variables .variable-editor-compact { padding:0 7px 8px; min-width:0; }
+.variable-editor-compact > .section-title { display:none; }
+.variable-editor-compact .variable-filters { display:grid; gap:5px; padding-bottom:7px; }
+.variable-editor-compact input,.variable-editor-compact select { width:100%; min-width:0; box-sizing:border-box; padding:5px; font:11px 'Segoe UI',sans-serif; border:1px solid #b9ccd9; border-radius:2px; background:white; }
+.variable-editor-compact .variable-list { border-radius:2px; }
+.variable-editor-compact .variable-list .variable-row { display:grid; grid-template-columns:minmax(0,1fr); gap:4px; padding:7px; }
+.variable-editor-compact .variable-list .compact-variable-name { display:block; padding:0; border:0; font-size:11px; overflow-wrap:anywhere; }
+.compact-variable-name small { display:block; margin-top:2px; font-size:9px; color:#5a7589; }
+.variable-editor-compact .variable-result { font-size:10px; overflow-wrap:anywhere; }
+.variable-editor-compact .variable-actions { display:grid; gap:6px; margin-top:8px; }
+.variable-editor-compact .variable-actions small { font-size:10px; color:#5a7589; }
+.inspector-variables > .inspector-help { padding:0 8px 8px; font-size:10px; }
+
+.desktop-main .tree-row-wrap { grid-template-columns:minmax(0,1fr) auto; }
+.tree-row-controls { display:flex; align-items:center; gap:4px; padding-right:5px; }
+.tree-visibility { width:14px; height:14px; margin:0; accent-color:#45748d; cursor:pointer; }
+.tree-row-hidden .tree-row { color:#7e8e98; }
+.tree-row-hidden .tree-label strong { text-decoration:line-through; text-decoration-color:#9eacb5; }
+.production-scope-note { color:var(--muted); font-size:11px; line-height:1.5; }
+
+.geometry-formula-notice { margin:8px; border:1px solid #c8ac70; background:#fff6df; color:#614d28; font-size:11px; }
+.geometry-formula-notice > summary { padding:8px; font-weight:600; cursor:pointer; }
+.geometry-formula-notice > p { margin:0; padding:0 8px 8px; line-height:1.5; }
+.geometry-formula-notice > ul { list-style:none; margin:0; padding:0 8px 8px; max-height:260px; overflow:auto; }
+.geometry-formula-notice li { display:grid; gap:4px; padding:7px 0; border-top:1px solid #dbcaa9; }
+.geometry-formula-notice code { white-space:normal; overflow-wrap:anywhere; }
+.geometry-formula-notice small { line-height:1.4; }
+
+/* Zajednička širina glavnog panela i dostupne površine dokumentnih prozora. */
+.desktop-provider { display:contents; }
+.desktop-main.workspace.canvas-workspace { grid-template-columns:var(--desktop-left) minmax(0,1fr) 6px var(--desktop-panel-width,310px); }
+.desktop-main .desktop-sidebar { grid-column:4; }
+.desktop-empty-stage { grid-template-columns:var(--desktop-left) minmax(0,1fr) var(--desktop-panel-width,310px); }
+.desktop-sidebar-split { grid-column:3; grid-row:1; min-height:0; background:#bfd0dc; cursor:col-resize; touch-action:none; user-select:none; }
+.desktop-sidebar-split:hover,.desktop-sidebar-split:focus-visible { background:#73a8c2; outline:1px solid #45748d; outline-offset:-1px; }
+
+.element-text-field { grid-column:1 / -1; }
+.element-text-field textarea { width:100%; min-width:0; box-sizing:border-box; resize:vertical; padding:7px; border:1px solid #b9ccd9; border-radius:3px; font:inherit; }
+.inspector-description,.inspector-note { display:grid; gap:4px; margin:8px 0; padding:7px; border:1px solid #cad8e2; background:#edf4f9; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.inspector-note { background:#fff8e9; }
+.inspector-description strong,.inspector-note strong { color:#5a7589; font-size:10px; }
+
+/* Group controls live in the resizable inspector, rather than a full-width page. */
+.corpus-editor-tool-content .board-group-editor { min-width:0;grid-template-columns:minmax(0,1fr); }
+.corpus-editor-tool-content .board-group-editor > * { min-width:0; }
+.corpus-editor-tool-content .board-group-heading { flex-wrap:wrap; }
+.corpus-editor-tool-content .board-group-fields,
+.corpus-editor-tool-content .board-group-distribution,
+.corpus-editor-tool-content .board-group-alignment,
+.corpus-editor-tool-content .board-group-placement,
+.corpus-editor-tool-content .board-group-appearance { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.corpus-editor-tool-content .board-group-fields > *,
+.corpus-editor-tool-content .board-group-distribution > *,
+.corpus-editor-tool-content .board-group-alignment > *,
+.corpus-editor-tool-content .board-group-placement > *,
+.corpus-editor-tool-content .board-group-appearance > * { min-width:0; }
+.corpus-editor-tool-content .board-group-distribution > strong,
+.corpus-editor-tool-content .board-group-alignment > strong,
+.corpus-editor-tool-content .board-group-placement > div:first-child,
+.corpus-editor-tool-content .board-group-appearance > p,
+.corpus-editor-tool-content .board-group-appearance > details,
+.corpus-editor-tool-content .board-group-appearance > div { grid-column:1/-1;overflow-wrap:anywhere; }
+.corpus-editor-tool-content .board-group-appearance ul { margin:6px 0;padding-left:20px; }
+.corpus-editor-tool-content .board-group-editor button { white-space:normal;overflow-wrap:anywhere; }
+.corpus-editor-tool-content .board-group-remove { flex-wrap:wrap; }
+
+/* Drilling forms share the resizable editor sidebar. */
+.corpus-editor-tool-content .hole-pattern > div { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.corpus-editor-tool-content .hole-pattern label,
+.corpus-editor-tool-content .hole-pattern label:has(input[inputmode]),
+.corpus-editor-tool-content .hole-fields label { width:auto;min-width:0; }
+.corpus-editor-tool-content .hole-pattern label span,
+.corpus-editor-tool-content .hole-fields label span { overflow-wrap:anywhere; }
+.corpus-editor-tool-content .hole-pattern input:not([type="checkbox"]),
+.corpus-editor-tool-content .hole-pattern label:has(input[inputmode]) input,
+.corpus-editor-tool-content .hole-pattern select,
+.corpus-editor-tool-content .hole-fields label:has(input[inputmode]) input { width:100%;min-width:0;max-width:100%; }
+.corpus-editor-tool-content .hole-pattern > div > button,
+.corpus-editor-tool-content .hole-mirror-fields .check-field { grid-column:1/-1; }
+.corpus-editor-tool-content .hole-pattern button { white-space:normal;overflow-wrap:anywhere; }
+
+.cutlist-csv-options { margin:12px 0; padding:10px; border:1px solid #bdcfdd; background:#edf4f8; }
+.cutlist-csv-options summary { cursor:pointer; font-weight:700; }
+.cutlist-csv-options p { font-size:11px; line-height:1.5; }
+.cutlist-csv-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; align-items:end; }
+.cutlist-csv-fields label { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.cutlist-csv-fields label.check-field { flex-direction:row; align-items:center; }
+.cutlist-csv-fields select { width:100%; min-width:0; }
+.cutlist-csv-options pre { max-width:100%; overflow:auto; padding:10px; background:white; color:#263f50; font-size:11px; white-space:pre; }
+
+.group-variable-editor { margin:12px 0; padding:10px; border:1px solid #aabfce; background:#edf4f8; }
+.group-variable-editor h3 { margin:0 0 8px; font-size:12px; }
+.group-variable-editor p { font-size:10px; line-height:1.5; }
+.group-variable-editor label { display:flex; flex-direction:column; gap:4px; margin:8px 0; min-width:0; }
+.group-variable-editor input,.group-variable-editor select { width:100%; min-width:0; }
+.group-variable-editor button { max-width:100%; white-space:normal; }
+.group-variable-preview { margin-top:10px; font-size:10px; overflow-wrap:anywhere; }
+.group-variable-preview ul { padding-left:16px; }
+.group-variable-preview li { margin:6px 0; }
+.group-variable-preview li > span { display:block; margin:4px 0; }

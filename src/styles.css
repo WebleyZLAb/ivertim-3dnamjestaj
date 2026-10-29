@@ -356,8 +356,8 @@ textarea:focus-visible,
 .element-preview > span { position: absolute; left: 12px; bottom: 10px; z-index: 2; color: #7d857b; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .element-preview-3d, .element-preview-loading { position: relative; height: 300px; overflow: hidden; background: #f0f2ed; border: 1px solid #d9ded7; border-radius: 14px; }
 .element-preview-3d > div { position: absolute; inset: 0; }
-.element-preview-3d canvas { width: 100%; height: 100%; display: block; cursor: grab; }
-.element-preview-3d canvas:active { cursor: grabbing; }
+.element-preview-3d canvas { width: 100%; height: 100%; display: block; cursor: default; }
+.element-preview-3d canvas:active { cursor: default; }
 .element-preview-3d > span { position: absolute; left: 12px; right: 12px; bottom: 10px; z-index: 2; padding: 6px 8px; color: #687067; background: rgba(255,255,255,.82); border: 1px solid rgba(217,222,215,.9); border-radius: 7px; font-size: 8px; font-weight: 800; text-align: center; pointer-events: none; backdrop-filter: blur(5px); }
 .element-preview-loading { display: grid; place-items: center; color: var(--muted); font-size: 10px; }
 .editor-sidebar-properties { display: grid; gap: 1px; margin: 14px 0 0; overflow: hidden; background: #dfe3de; border: 1px solid #dfe3de; border-radius: 11px; }
@@ -825,8 +825,8 @@ textarea:focus-visible,
 .axis-y { background: #79a63b; }
 .axis-z { background: #4f78ba; }
 .three-canvas { min-height: 0; position: relative; overflow: hidden; background: #f4f6f1; border: 1px solid #d6dbd3; border-radius: 15px; box-shadow: inset 0 0 45px rgba(33,40,31,.045); }
-.three-canvas canvas { width: 100%; height: 100%; display: block; outline: none; cursor: grab; }
-.three-canvas canvas:active { cursor: grabbing; }
+.three-canvas canvas { width: 100%; height: 100%; display: block; outline: none; cursor: default; }
+.three-canvas canvas:active { cursor: default; }
 .empty-details h2 { margin: 12px 0 5px; color: var(--ink); }
 .empty-details p { margin: 0; }
 .statusbar { display: flex; justify-content: space-between; align-items: center; padding: 0 18px; color: #747b74; background: #f6f7f4; border-top: 1px solid var(--line); font-size: 10px; }
@@ -1020,3 +1020,46 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .element-library-dialog > footer > .primary-command:disabled { opacity: .35; cursor: default; }
 @media (max-width: 850px) { .element-library-body { grid-template-columns: 140px minmax(160px, 32%) minmax(0, 1fr); } .library-preview { padding: 12px; } .library-preview-dimensions { gap: 4px; } .library-preview-dimensions > div { padding: 7px 4px; } .library-preview-dimensions dd { font-size: 10px; } }
 @media (max-width: 640px) { .element-library-backdrop { padding: 8px; } .element-library-dialog { height: 96vh; } .element-library-body { overflow: auto; grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: 200px minmax(320px, 1fr); } .library-folders { grid-column: 1; grid-row: 1 / 3; } .library-choices { grid-column: 2; grid-row: 1; } .library-preview { grid-column: 2; grid-row: 2; } .element-library-dialog > header, .element-library-tools { padding-inline: 12px; } .element-library-dialog > footer { flex-wrap: wrap; padding: 10px; } }
+
+.variable-list .variable-definition { grid-column: 1 / -1; display: grid; gap: 4px; min-width: 0; }
+.variable-definition small { color: var(--muted); overflow-wrap: anywhere; }
+.variable-definition select { width: 100%; min-width: 0; padding: 5px; font: inherit; }
+
+.material-replacement { padding: 20px; overflow: auto; height: 100%; box-sizing: border-box; }
+.material-replacement label { display: grid; gap: 6px; margin: 12px 0; }
+.material-replacement select, .material-replacement input { width: 100%; min-width: 0; padding: 8px; box-sizing: border-box; }
+.material-replacement p { line-height: 1.5; }
+.material-replacement li { margin: 6px 0; }
+
+.desktop-material-notice { position: absolute; top: 28px; left: 8px; right: 8px; z-index: 4; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 7px 12px; background: #fff2d4; color: #503a12; border-bottom: 1px solid #d8bd79; font-size: 12px; }
+.desktop-material-notice button { padding: 4px 8px; }
+.material-replacement .check-field { display: flex; align-items: center; }
+.material-replacement .check-field input { width: auto; }
+
+.canvas-workspace .drawing-view .canvas-frame,
+.canvas-workspace .drawing-view .elevation-svg { min-height: 0; }
+
+.board-formula-editor { margin-top: 16px; }
+.board-formula-rows { display: grid; gap: 8px; margin: 12px 0; }
+.board-formula-rows label { display: grid; grid-template-columns: 110px minmax(100px,1fr) minmax(110px,auto); align-items: center; gap: 8px; }
+.board-formula-rows input { min-width: 0; padding: 7px; }
+.board-formula-rows output { font-size: 11px; color: #506333; }
+@media(max-width:700px) { .board-formula-rows label { grid-template-columns: 1fr; } }
+
+.expression-catalog { margin: 12px 0; }
+.expression-catalog-filter { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.expression-catalog-filter input { flex: 1; min-width: 120px; }
+.expression-catalog ul { max-height: 260px; overflow: auto; padding: 0; list-style: none; }
+.expression-catalog li { display: grid; grid-template-columns: minmax(130px,1fr) minmax(160px,2fr) auto; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid #d4dfe6; font-size: 11px; }
+.expression-catalog code { overflow-wrap: anywhere; }
+.expression-catalog li button { padding: 5px 8px; }
+.expression-catalog li small { grid-column: 1/-1; }
+@media(max-width:700px) { .expression-catalog li { grid-template-columns:1fr; } }
+
+.library-insert-dimensions { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin: 12px 0; font-size: 11px; }
+.library-insert-dimensions label>div { display: flex; align-items: center; gap: 4px; margin-top: 5px; }
+.library-insert-dimensions input { width: 100%; min-width: 0; padding: 7px; }
+.library-resize-error { color: #833e27; background: #fff1e7; padding: 8px; margin-top: 10px; font-size: 11px; }
+.library-resize-error code { display: block; overflow-wrap: anywhere; }
+.library-resize-error li { margin: 8px 0; }
+.library-resize-state { font-size: 11px; color: #4e6c2c; }

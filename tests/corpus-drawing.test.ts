@@ -44,3 +44,24 @@ test("izvozi zajednički omotač i samo ukupne kote označene grupe", () => {
   assert.match(svg, />900 mm<\/text>/);
   assert.equal((svg.match(/class="dimension"/g) ?? []).length, 1);
 });
+
+
+test("sakriven član grupe ne ukida kote preostalih vidljivih elemenata ni ulazi u SVG", () => {
+ const second={...element,name:"Vidljivi drugi",position:[500,120,900] as const};
+ const hidden={...element,name:"Sakriveni primjer",visible:false,position:[100000,100000,100000] as const};
+ for (const projection of ["front","top","side"] as const) {
+  assert.deepEqual(corpusDrawingGroupBounds([element,second,hidden],projection),corpusDrawingGroupBounds([element,second],projection));
+  const svg=corpusDrawingSvg([element,second,hidden],projection,element,[element,second,hidden]);
+  assert.match(svg,/class="group-envelope"/);
+  assert.doesNotMatch(svg,/Sakriveni primjer/);
+  assert.equal((svg.match(/<g class="element/g)??[]).length,2);
+  assert.equal((svg.match(/class="dimension"/g)??[]).length,1);
+ }
+ assert.equal(corpusDrawingGroupBounds([element,hidden],"front"),null);
+});
+test("nema izvoza za potpuno sakrivenu grupu, a nepotpuna vidljiva geometrija ostaje nerazriješena", () => {
+ const hidden={...element,visible:false};
+ assert.equal(corpusDrawingGroupBounds([hidden,hidden],"front"),null);
+ assert.throws(()=>corpusDrawingSvg([hidden],"front"),/nema geometriju/);
+ assert.equal(corpusDrawingGroupBounds([element,{...element,width:null}],"front"),null);
+});

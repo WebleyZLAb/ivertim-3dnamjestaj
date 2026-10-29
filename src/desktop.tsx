@@ -1,12 +1,24 @@
 import { Icon, type IconName, type IconVariant } from "./iconsax";
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 type WindowEntry = { id: string; title: string; minimized: boolean };
-type WindowManager = { host: HTMLDivElement | null; windows: WindowEntry[]; active: string; register(id: string, title: string): () => void; activate(id: string): void; minimize(id: string): void };
+type WindowManager = { sidebarWidth: number; sidebarMaxWidth: number; setSidebarWidth(width: number): void; host: HTMLDivElement | null; windows: WindowEntry[]; active: string; register(id: string, title: string): () => void; activate(id: string): void; minimize(id: string): void };
 const WindowContext = createContext<WindowManager | null>(null);
 
 export function DesktopProvider({ children }: { children: ReactNode }) {
+  const [requestedSidebarWidth, setRequestedSidebarWidth] = useState(310);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const update = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  const sidebarMaxWidth = Math.max(190, Math.min(560, viewportWidth - 310));
+  const sidebarWidth = Math.min(requestedSidebarWidth, sidebarMaxWidth);
+  const setSidebarWidth = useCallback((width: number) => {
+    if (Number.isFinite(width)) setRequestedSidebarWidth(Math.max(190, Math.min(560, width)));
+  }, []);
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   const [windows, setWindows] = useState<WindowEntry[]>([]);
   const [active, setActive] = useState("");
@@ -23,11 +35,11 @@ export function DesktopProvider({ children }: { children: ReactNode }) {
       if (next !== active) setActive(next);
     }
   }, [windows, active]);
-  return <WindowContext.Provider value={{ host, windows, active, register, activate, minimize }}>
+  return <WindowContext.Provider value={{ host, windows, active, register, activate, minimize, sidebarWidth, sidebarMaxWidth, setSidebarWidth }}><div className="desktop-provider" style={{ "--desktop-panel-width": `${sidebarWidth}px`, "--desktop-right": `${sidebarWidth + 15}px` } as CSSProperties}>
     {children}
     <div className="desktop-window-host" ref={setHost} />
     <nav className="desktop-taskbar" aria-label="Otvoreni prozori">{windows.map((entry) => <button key={entry.id} className={active === entry.id && !entry.minimized ? "active" : ""} aria-pressed={active === entry.id && !entry.minimized} onClick={() => activate(entry.id)}>{entry.minimized ? "▱" : "▣"} {entry.title}</button>)}</nav>
-  </WindowContext.Provider>;
+  </div></WindowContext.Provider>;
 }
 
 export function useDesktopWindows() {

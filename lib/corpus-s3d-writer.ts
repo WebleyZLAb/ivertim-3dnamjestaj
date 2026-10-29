@@ -20,23 +20,26 @@ export function writeCorpusS3dGeometryCopy(
   const workingCopy = createCorpusWorkingCopyFile("source.s3d", original, current, "", rooms);
   const changes = workingCopy.changes;
   const boardChanges = workingCopy.boardChanges;
+  const boardFormulaChanges = workingCopy.boardFormulaChanges;
   const boardAppearanceChanges = workingCopy.boardAppearanceChanges;
   const boardHolesChanges = workingCopy.boardHolesChanges;
   const roomChange = workingCopy.roomChange;
   const elementIdentityChanges = workingCopy.elementIdentityChanges;
   const elementVariableChanges = workingCopy.elementVariableChanges;
-  if (!changes.length && !boardChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length && !elementVariableChanges.length) return xml;
+  if (!changes.length && !boardChanges.length && !boardFormulaChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length && !elementVariableChanges.length) return xml;
 
   const byPath = new Map(changes.map((change) => [change.path.join("."), change.after]));
+  const formulasByPath = new Map(boardFormulaChanges.map(change => [`${change.elementPath.join(".")}:${change.boardIndex}`,change]));
   const boardsByPath = new Map(boardChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
   const boardAppearanceByPath = new Map(boardAppearanceChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
-  const boardHolesByPath = new Map(boardHolesChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change.after]));
-  const identitiesByPath = new Map(elementIdentityChanges.map((change) => [change.path.join("."), change.after]));
+  const boardHolesByPath = new Map(boardHolesChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change]));
+  const identitiesByPath = new Map(elementIdentityChanges.map((change) => [change.path.join("."), change]));
   const variablesByPath = new Map(elementVariableChanges.map((change) => [change.path.join("."), change]));
   const tags = scanXmlTags(xml);
   const replacements: Array<{ start: number; end: number; value: string }> = [];
   const foundPaths = new Set<string>();
   const foundBoardPaths = new Set<string>();
+  const foundFormulaPaths = new Set<string>();
   const foundBoardAppearancePaths = new Set<string>();
   const foundBoardHolesPaths = new Set<string>();
   const foundIdentityPaths = new Set<string>();
@@ -48,19 +51,24 @@ export function writeCorpusS3dGeometryCopy(
 
   for (const token of tags) {
     if (token.closing) {
-      if (token.name === "AD") activeBoardPath = null;
+      if (token.name === "AD") {
+        if (activeBoardPath && boardHolesByPath.has(activeBoardPath) && !foundBoardHolesPaths.has(activeBoardPath)) {
+          const change = boardHolesByPath.get(activeBoardPath)!;
+          if (change.before.length) throw new Error(`Izvorni zapisi rupa ploče ${activeBoardPath} nisu pronađeni.`);
+          replacements.push({ start: token.start, end: token.start, value: serializeHolesContainer(change.after) });
+          foundBoardHolesPaths.add(activeBoardPath);
+        }
+        activeBoardPath = null;
+      }
       if ((token.name === "ELEMENT" || token.name === "ELM") && stack.at(-1)?.tag === token.name) stack.pop();
       continue;
     }
     if (token.name === "RUPE" && activeBoardPath && boardHolesByPath.has(activeBoardPath)) {
-      const holes = boardHolesByPath.get(activeBoardPath)!;
-      const value = serializeHolesContainer(holes);
-      if (token.selfClosing) replacements.push({ start: token.start, end: token.end, value });
-      else {
-        const closing = tags.find((candidate) => candidate.start >= token.end && candidate.closing && candidate.name === "RUPE");
-        if (!closing) throw new Error(`RUPE sekcija ploče ${activeBoardPath} nije zatvorena.`);
-        replacements.push({ start: token.start, end: closing.end, value });
-      }
+      const change = boardHolesByPath.get(activeBoardPath)!;
+      const closing = token.selfClosing ? token : tags.find(candidate => candidate.start >= token.end && candidate.closing && candidate.name === "RUPE");
+      if (!closing) throw new Error(`RUPE sekcija ploče ${activeBoardPath} nije zatvorena.`);
+      const source = xml.slice(token.start, closing.end);
+      replacements.push({ start: token.start, end: closing.end, value: serializeHolesContainer(change.after, source, change.before) });
       foundBoardHolesPaths.add(activeBoardPath);
       continue;
     }
@@ -92,8 +100,10 @@ export function writeCorpusS3dGeometryCopy(
       const boardPath = `${parent.path.join(".")}:${parent.nextBoard++}`;
       activeBoardPath = boardPath;
       const geometry = boardsByPath.get(boardPath);
+      const formulaChange = formulasByPath.get(boardPath);
       const appearance = boardAppearanceByPath.get(boardPath);
-      if (geometry || appearance) {
+      const firstHoles = token.selfClosing ? boardHolesByPath.get(boardPath) : undefined;
+      if (geometry || formulaChange || appearance || firstHoles) {
         let value = token.raw;
         if (geometry) {
         foundBoardPaths.add(boardPath);
@@ -107,6 +117,15 @@ export function writeCorpusS3dGeometryCopy(
         }
         BOARD_ATTRIBUTE_KEYS.forEach((key, index) => { value = setXmlAttribute(value, key, formatS3dNumber(values[index]!)); });
         }
+        if (formulaChange) {
+          foundFormulaPaths.add(boardPath);
+          for (const key of new Set([...Object.keys(formulaChange.before),...Object.keys(formulaChange.after)])) {
+            if (formulaChange.before[key] === formulaChange.after[key]) continue;
+            const expression = formulaChange.after[key];
+            if (expression?.trim()) value = setXmlAttribute(value,key,escapeXmlAttribute(expression).replaceAll("'","&apos;"));
+            else value = value.replace(new RegExp(`\\s${key}\\s*=\\s*(["']).*?\\1`,"i"),"");
+          }
+        }
         if (appearance) {
           if (appearance.color === null || appearance.transparent === null || appearance.visible === null) {
             throw new Error(`Ploča ${boardPath} nema potpun izgled za S3D izvoz.`);
@@ -118,8 +137,14 @@ export function writeCorpusS3dGeometryCopy(
           value = setXmlAttribute(value, "PROZIRNO", String(appearance.transparent));
           value = setXmlAttribute(value, "VISIBLE", String(appearance.visible));
         }
+        if (firstHoles) {
+          if (firstHoles.before.length) throw new Error(`Izvorni zapisi rupa ploče ${boardPath} nisu pronađeni.`);
+          value = value.replace(/\/\s*>$/, ">") + serializeHolesContainer(firstHoles.after) + "</AD>";
+          foundBoardHolesPaths.add(boardPath);
+        }
         replacements.push({ start: token.start, end: token.end, value });
       }
+      if (token.selfClosing) activeBoardPath = null;
       continue;
     }
     if (token.name !== "ELEMENT" && token.name !== "ELM") continue;
@@ -133,7 +158,8 @@ export function writeCorpusS3dGeometryCopy(
     }
 
     const geometry = byPath.get(path.join("."));
-    const identity = identitiesByPath.get(path.join("."));
+    const identityChange = identitiesByPath.get(path.join("."));
+    const identity = identityChange?.after;
     if (geometry || identity) {
       let value = token.raw;
       if (geometry) {
@@ -155,6 +181,8 @@ export function writeCorpusS3dGeometryCopy(
         const values = [identity.name, identity.code, identity.className].map(escapeXmlAttribute);
         values.push(String(identity.visible), String(identity.editable), String(identity.locked));
         ELEMENT_IDENTITY_ATTRIBUTE_KEYS.forEach((key, index) => { value = setXmlAttribute(value, key, values[index]!); });
+        if (identity.description !== identityChange!.before.description) value = setXmlAttribute(value, "EOPIS", escapeXmlAttribute(identity.description ?? ""));
+        if (identity.note !== identityChange!.before.note) value = setXmlAttribute(value, "ENAPOMENA", escapeXmlAttribute(identity.note ?? ""));
       }
       replacements.push({ start: token.start, end: token.end, value });
     }
@@ -184,6 +212,9 @@ export function writeCorpusS3dGeometryCopy(
   for (const path of variablesByPath.keys()) {
     if (!foundVariablePaths.has(path)) throw new Error(`EVAR sekcija izmijenjenog elementa ${path} nije pronađena u izvornom dokumentu.`);
   }
+  for (const path of formulasByPath.keys()) {
+    if (!foundFormulaPaths.has(path)) throw new Error(`Izrazi ploče ${path} nisu pronađeni u izvornom dokumentu.`);
+  }
   if (roomChange && !roomFound) throw new Error("SOBA sekcija nije pronađena u izvornom S3D dokumentu.");
 
   let output = xml;
@@ -209,6 +240,7 @@ export interface CorpusE3dImportSource {
 }
 
 export interface CorpusNewBoardSpec {
+  formulas?: Partial<Readonly<Record<"XF" | "YF" | "ZF" | "HF" | "SF" | "DF", string>>>;
   name: string;
   position: readonly [number, number, number];
   height: number;
@@ -333,7 +365,7 @@ export type CorpusIndexedBoardCopySpec = CorpusBoardCopySpec & { boardIndex: num
 
 /**
  * Pravi ograničen niz cijelih AD fragmenata kao jednu strukturnu izmjenu.
- * Mijenja samo DNAME i tri pozicijska atributa svake kopije, pa kontura,
+ * Mijenja DNAME, položaj i pomak postojećih pozicijskih izraza kopije; kontura,
  * rupe, rubovi i nepoznate obrade ostaju bajt-po-bajt isti kao u izvoru.
  */
 export function duplicateCorpusE3dBoardCopies(xml: string, boardIndex: number, copies: readonly CorpusBoardCopySpec[]): string {
@@ -352,15 +384,45 @@ export function duplicateCorpusE3dBoardCopies(xml: string, boardIndex: number, c
   const lineStart = xml.lastIndexOf("\n", board.start - 1) + 1;
   const indent = xml.slice(lineStart, board.start).match(/^\s*/)?.[0] ?? "";
   const insertion = copies.map((copy) => {
-    let nextOpening = setXmlAttribute(opening.raw, "DNAME", escapeXmlAttribute(copy.name.trim()));
-    nextOpening = setXmlAttribute(nextOpening, "DXPOS", formatS3dNumber(copy.position[0]));
-    nextOpening = setXmlAttribute(nextOpening, "DYPOS", formatS3dNumber(copy.position[1]));
-    nextOpening = setXmlAttribute(nextOpening, "DZPOS", formatS3dNumber(copy.position[2]));
+    const positioned = positionedBoardOpening(opening.raw, copy.position);
+    const nextOpening = setXmlAttribute(positioned, "DNAME", escapeXmlAttribute(copy.name.trim()));
     return `${newline}${indent}${nextOpening}${fragment.slice(opening.end)}`;
   }).join("");
   const updatedContainer = setXmlAttribute(container.raw, "DCOUNT", String(boards.length + copies.length));
   return xml.slice(0, container.start) + updatedContainer
     + xml.slice(container.end, board.end) + insertion + xml.slice(board.end);
+}
+
+/** Move one board while retaining its positional dependencies plus the requested offset. */
+export function positionCorpusE3dBoard(xml: string, boardIndex: number, position: readonly [number, number, number]): string {
+  if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
+  const { boards } = findRootBoardFragments(xml);
+  const board = boards[boardIndex];
+  if (!board) throw new Error("Izabrana ploča nije pronađena.");
+  const fragment = xml.slice(board.start, board.end);
+  const opening = scanXmlTags(fragment).find(token => !token.closing && token.name === "AD");
+  if (!opening) throw new Error("Početak ploče nije pronađen.");
+  return xml.slice(0, board.start) + positionedBoardOpening(opening.raw, position) + fragment.slice(opening.end) + xml.slice(board.end);
+}
+
+function positionedBoardOpening(opening: string, position: readonly [number, number, number]): string {
+  if (position.length !== 3 || position.some(value => !Number.isFinite(value))) throw new Error("Položaj ploče mora imati tri konačne koordinate.");
+  let result = opening;
+  ([ ["DXPOS", "XF"], ["DYPOS", "YF"], ["DZPOS", "ZF"] ] as const).forEach(([attribute, formulaKey], axis) => {
+    const rawFormula = xmlAttribute(opening, formulaKey);
+    if (rawFormula?.trim()) {
+      const rawBefore = xmlAttribute(opening, attribute);
+      const before = rawBefore?.trim() ? Number(decodeXmlAttribute(rawBefore).replace(",", ".")) : NaN;
+      if (!Number.isFinite(before)) throw new Error(`Pomak izraza ${formulaKey} traži poznatu početnu koordinatu.`);
+      const delta = Number((position[axis]! - before).toFixed(6));
+      if (delta !== 0) {
+        const formula = `(${decodeXmlAttribute(rawFormula)})+(${formatS3dNumber(delta)})`;
+        result = setXmlAttribute(result, formulaKey, escapeXmlAttribute(formula).replaceAll("'", "&apos;"));
+      }
+    }
+    result = setXmlAttribute(result, attribute, formatS3dNumber(position[axis]!));
+  });
+  return result;
 }
 
 /** Kopira više različitih AD fragmenata; obrada unazad čuva izvorne indekse. */
@@ -435,10 +497,10 @@ export function renameCorpusE3dBoard(xml: string, boardIndex: number, name: stri
 }
 
 /** Zamjenjuje KRIVULJE izabrane E3D ploče provjerenom zatvorenom konturom ravnih segmenata. */
-export function replaceCorpusE3dBoardContour(xml: string, boardIndex: number, points: readonly CorpusStraightContourPoint[]): string {
+export function replaceCorpusE3dBoardContour(xml: string, boardIndex: number, points: readonly CorpusStraightContourPoint[], elementPath: readonly number[] = [0]): string {
   if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
   validateStraightContour(points);
-  const { boards } = findRootBoardFragments(xml);
+  const { boards } = findRootBoardFragments(xml, elementPath);
   const board = boards[boardIndex];
   if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena u E3D elementu.`);
   const fragment = xml.slice(board.start, board.end);
@@ -525,6 +587,21 @@ export function replaceCorpusE3dBoardEdgeBanding(xml: string, boardIndex: number
 }
 
 /** Dodaje novu pravougaonu ploču u direktnu DASKE sekciju korijenskog E3D elementa. */
+export function replaceCorpusE3dBoardFormulas(xml: string, boardIndex: number, patch: Readonly<Record<string, string>>, elementPath: readonly number[] = [0]): string {
+  const allowed = new Set(["XF","YF","ZF","HF","SF","DF","KXF","KYF","KZF"]);
+  if(Object.entries(patch).some(([key,value])=>!allowed.has(key)||typeof value!=="string")) throw new Error("Nepoznata geometrijska formula ploče.");
+  const {boards}=findRootBoardFragments(xml,elementPath);
+  const board=boards[boardIndex];
+  if(!Number.isInteger(boardIndex)||!board) throw new Error("Ploča za izmjenu izraza nije pronađena.");
+  const token=scanXmlTags(xml).find(item=>item.start===board.start && item.name==="AD" && !item.closing)!;
+  let tag=token.raw;
+  for(const [key,value] of Object.entries(patch)) {
+    if(value.trim()) tag=setXmlAttribute(tag,key,escapeXmlAttribute(value.trim()));
+    else tag=tag.replace(new RegExp(`\\s${key}\\s*=\\s*(["']).*?\\1`,"i"),"");
+  }
+  return xml.slice(0,token.start)+tag+xml.slice(token.end);
+}
+
 export function appendCorpusE3dBoard(xml: string, spec: CorpusNewBoardSpec): string {
   validateNewBoardSpec(spec);
   const { container, boards, closing } = findRootBoardFragments(xml);
@@ -670,26 +747,28 @@ function extractRootElementFragments(xml: string): string[] {
   return result;
 }
 
-function findRootBoardFragments(xml: string): {
+function findRootBoardFragments(xml: string, elementPath: readonly number[] = [0]): {
   container: XmlTagToken;
   boards: Array<{ start: number; end: number }>;
   closing: XmlTagToken | null;
 } {
+  if (!elementPath.length || elementPath.some(part => !Number.isInteger(part) || part < 0)) throw new Error("Putanja E3D elementa nije ispravna.");
   const tags = scanXmlTags(xml);
-  const rootIndex = tags.findIndex((token) => !token.closing && token.name === "ELEMENT");
-  if (rootIndex < 0) throw new Error("E3D nema korijenski ELEMENT.");
-  let elementDepth = 0;
-  let rootEnd = xml.length;
-  for (let index = rootIndex; index < tags.length; index += 1) {
-    const token = tags[index]!;
-    if (token.name !== "ELEMENT" && token.name !== "ELM") continue;
-    if (!token.closing && !token.selfClosing) elementDepth += 1;
-    else if (token.closing) elementDepth -= 1;
-    if (elementDepth === 0) { rootEnd = token.end; break; }
+  const stack: Array<{tag:string;path:number[];nextChild:number}> = [];
+  let nextRoot=0, containerIndex=-1;
+  const key=elementPath.join('.');
+  for(let index=0;index<tags.length;index++){
+    const token=tags[index]!;
+    if(token.closing){if((token.name==='ELEMENT'||token.name==='ELM')&&stack.at(-1)?.tag===token.name)stack.pop();continue;}
+    if(token.name==='ELEMENT'||token.name==='ELM'){
+      const parent=stack.at(-1);
+      const path=token.name==='ELEMENT'?[nextRoot++]:parent?[...parent.path,parent.nextChild++]:null;
+      if(!path)throw new Error("ELM nema roditeljski element.");
+      if(!token.selfClosing)stack.push({tag:token.name,path,nextChild:0});
+    }else if(token.name==='DASKE'&&stack.at(-1)?.path.join('.')===key){containerIndex=index;break;}
   }
-  const containerIndex = tags.findIndex((token, index) => index > rootIndex && token.start < rootEnd && !token.closing && token.name === "DASKE");
-  if (containerIndex < 0) throw new Error("Korijenski E3D element nema DASKE sekciju.");
-  const container = tags[containerIndex]!;
+  if(containerIndex<0)throw new Error(`E3D element ${key} nema DASKE sekciju.`);
+  const container=tags[containerIndex]!;
   if (container.selfClosing) return { container, boards: [], closing: null };
   const closingIndex = tags.findIndex((token, index) => index > containerIndex && token.closing && token.name === "DASKE");
   if (closingIndex < 0) throw new Error("DASKE sekcija nije zatvorena.");
@@ -711,6 +790,7 @@ function findRootBoardFragments(xml: string): {
 
 function validateNewBoardSpec(spec: CorpusNewBoardSpec): void {
   const numbers = [...spec.position, spec.height, spec.width, spec.thickness];
+  if (spec.formulas && Object.entries(spec.formulas).some(([key,value]) => !["XF","YF","ZF","HF","SF","DF"].includes(key) || typeof value !== "string" || !value.trim())) throw new Error("Formule nove ploče nisu ispravne.");
   if (!spec.name.trim()) throw new Error("Naziv nove ploče ne može biti prazan.");
   if (numbers.some((value) => !Number.isFinite(value))) throw new Error("Geometrija nove ploče mora sadržati konačne brojeve.");
   if (spec.height <= 0 || spec.width <= 0 || spec.thickness <= 0) throw new Error("Mjere nove ploče moraju biti veće od nule.");
@@ -773,10 +853,11 @@ function xmlAttribute(tag: string, name: string): string | null {
 
 function serializeNewBoard(spec: CorpusNewBoardSpec): string {
   const [x, y, z] = spec.position;
+  const formulas = Object.entries(spec.formulas ?? {}).map(([key,value]) => ` ${key}="${escapeXmlAttribute(value!)}"`).join("");
   const h = formatS3dNumber(spec.height / 1000);
   const w = formatS3dNumber(spec.width / 1000);
   const curve = `&quot;PTOCKA=0&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=0&quot;,&quot;PTZ=0&quot;,&quot;PTOCKA=1&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=${h}&quot;,&quot;PTZ=0&quot;,&quot;PTOCKA=2&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=${h}&quot;,&quot;PTZ=${w}&quot;,&quot;PTOCKA=3&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=0&quot;,&quot;PTZ=${w}&quot;`;
-  return `<AD DNAME="${escapeXmlAttribute(spec.name.trim())}" DXPOS="${formatS3dNumber(x)}" DYPOS="${formatS3dNumber(y)}" DZPOS="${formatS3dNumber(z)}" VISINA="${formatS3dNumber(spec.height)}" DUBINA="${formatS3dNumber(spec.width)}" DEBLJINA="${formatS3dNumber(spec.thickness)}" SMJER="${spec.direction}" DKUT="0" XKUT="0" ZKUT="0" MATNAME="${escapeXmlAttribute(spec.materialName)}" MATUID="${escapeXmlAttribute(spec.materialUid)}" BOJA="${spec.color}" PROZIRNO="${spec.transparent}" VISIBLE="${spec.visible}"><RUPE/><KRIVULJE DATA="${curve}"/></AD>`;
+  return `<AD DNAME="${escapeXmlAttribute(spec.name.trim())}" DXPOS="${formatS3dNumber(x)}" DYPOS="${formatS3dNumber(y)}" DZPOS="${formatS3dNumber(z)}" VISINA="${formatS3dNumber(spec.height)}" DUBINA="${formatS3dNumber(spec.width)}" DEBLJINA="${formatS3dNumber(spec.thickness)}" SMJER="${spec.direction}" DKUT="0" XKUT="0" ZKUT="0" MATNAME="${escapeXmlAttribute(spec.materialName)}" MATUID="${escapeXmlAttribute(spec.materialUid)}" BOJA="${spec.color}" PROZIRNO="${spec.transparent}" VISIBLE="${spec.visible}"${formulas}><RUPE/><KRIVULJE DATA="${curve}"/></AD>`;
 }
 
 function setXmlAttribute(tag: string, name: string, value: string): string {
@@ -856,19 +937,99 @@ function formatS3dNumber(value: number): string {
 }
 
 function escapeXmlAttribute(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("\"", "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("\"", "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\r", "&#13;").replaceAll("\n", "&#10;").replaceAll("\t", "&#9;");
 }
 
-function serializeHolesContainer(holes: readonly CorpusS3dHole[]): string {
-  if (!holes.length) return "<RUPE/>";
-  return `<RUPE>${holes.map(serializeHole).join("")}</RUPE>`;
+function directXmlChildren(xml: string): Array<{ name: string; start: number; end: number; raw: string }> {
+  const children: Array<{ name: string; start: number; end: number; raw: string }> = [];
+  let depth = 0;
+  let child: XmlTagToken | null = null;
+  for (const token of scanXmlTags(xml)) {
+    if (token.closing) {
+      depth--;
+      if (depth === 1 && child) {
+        children.push({ name: child.name, start: child.start, end: token.end, raw: xml.slice(child.start, token.end) });
+        child = null;
+      }
+    } else {
+      if (depth === 1) {
+        if (token.selfClosing) children.push({ name: token.name, start: token.start, end: token.end, raw: token.raw });
+        else child = token;
+      }
+      if (!token.selfClosing) depth++;
+    }
+  }
+  return children;
+}
+
+function serializeHolesContainer(holes: readonly CorpusS3dHole[], source = "<RUPE/>", before: readonly CorpusS3dHole[] = []): string {
+  const children = directXmlChildren(source);
+  const sources = new Map<string, string>();
+  const counts = new Map<string, number>();
+  const groups = children.filter(child => /^GRUPA\d+$/i.test(child.name));
+  for (const group of groups) {
+    const index = counts.get(group.name) ?? 0;
+    sources.set(`${group.name}:${index}`, group.raw);
+    counts.set(group.name, index + 1);
+  }
+  const entries = holes.map(hole => {
+    const key = `${hole.groupType.toUpperCase()}:${hole.sourceIndex}`;
+    const raw = sources.get(key);
+    const original = before.find(item => item.groupType.toUpperCase() === hole.groupType.toUpperCase() && item.sourceIndex === hole.sourceIndex);
+    if (hole.sourceIndex !== undefined && (!raw || !original)) throw new Error("Izvorni XML zapis rupe nije pronađen; izvoz nije napravljen.");
+    return { key: raw && original ? key : null, xml: raw && original ? serializeSourceHole(hole, original, raw) : serializeHole(hole) };
+  });
+  const encoded = entries.map(entry => entry.xml).join("");
+  const opening = scanXmlTags(source)[0]!;
+  if (opening.selfClosing) return encoded ? `${opening.raw.replace(/\/\s*>$/, ">")}${encoded}</RUPE>` : source;
+  // Keep RVAR, unknown children, comments, container attributes and surrounding bytes.
+  if (!groups.length) {
+    const end = source.lastIndexOf("</");
+    return source.slice(0, end) + encoded + source.slice(end);
+  }
+  const groupKeys: string[] = [];
+  const occurrence = new Map<string, number>();
+  for (const group of groups) {
+    const index = occurrence.get(group.name) ?? 0;
+    groupKeys.push(`${group.name}:${index}`);
+    occurrence.set(group.name, index + 1);
+  }
+  const slots = groups.map(() => "");
+  let previousSlot = -1;
+  for (const entry of entries) {
+    const slot = entry.key === null ? groups.length - 1 : groupKeys.indexOf(entry.key);
+    if (slot < previousSlot) throw new Error("Promjena redoslijeda rupa preko izvornih RVAR zapisa nije podržana.");
+    slots[slot] += entry.xml;
+    previousSlot = slot;
+  }
+  let result = source;
+  for (let index = groups.length - 1; index >= 0; index--) {
+    const group = groups[index]!;
+    result = result.slice(0, group.start) + slots[index] + result.slice(group.end);
+  }
+  return result;
+}
+
+function serializeSourceHole(hole: CorpusS3dHole, before: CorpusS3dHole, source: string): string {
+  const opening = scanXmlTags(source)[0]!;
+  let tag = opening.raw;
+  const fields = [["RNA", "name"], ["RXP", "xExpression"], ["RYP", "yExpression"], ["RFI", "diameter"], ["RDU", "depth"], ["RPL", "plane"], ["RAA", "angle"]] as const;
+  for (const [attribute, field] of fields) {
+    if (hole[field] === before[field]) continue;
+    const value = hole[field];
+    tag = value === null ? tag.replace(new RegExp(`\\s${attribute}\\s*=\\s*(["'])(.*?)\\1`, "i"), "") : setXmlAttribute(tag, attribute, escapeXmlAttribute(String(value)));
+  }
+  let result = tag + source.slice(opening.end);
+  if (hole.machiningMode === before.machiningMode && JSON.stringify(hole.machining) === JSON.stringify(before.machining)) return result;
+  // Unsupported RAS layouts must never be silently reconstructed.
+  throw new Error("Zapis RAS postojeće rupe ne može se mijenjati ovim izvozom. Osnovna polja rupe ostaju podržana.");
 }
 
 function serializeHole(hole: CorpusS3dHole): string {
   const tag = /^GRUPA\d+$/i.test(hole.groupType) ? hole.groupType.toUpperCase() : "GRUPA14";
   const attributes: Array<[string, string | number | null]> = [
     ["RXP", hole.xExpression], ["RYP", hole.yExpression], ["RPL", hole.plane], ["RNA", hole.name],
-    ["RFI", hole.diameter], ["RDU", hole.depth], ["RAL", hole.angle],
+    ["RFI", hole.diameter], ["RDU", hole.depth], ["RAA", hole.angle],
   ];
   const encoded = attributes
     .filter(([, value]) => value !== null && value !== "")
@@ -881,5 +1042,5 @@ function serializeHole(hole: CorpusS3dHole): string {
 }
 
 function escapeXmlText(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\r", "&#13;").replaceAll("\n", "&#10;").replaceAll("\t", "&#9;");
 }

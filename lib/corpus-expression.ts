@@ -20,6 +20,23 @@ export interface CorpusAssignmentAnalysis extends CorpusExpressionAssignment {
   value: CorpusExpressionValue | null;
 }
 
+const unaryMathFunctions: Readonly<Record<string, (value: number) => number>> = {
+  SIN: value => Math.sin(value * Math.PI / 180),
+  COS: value => Math.cos(value * Math.PI / 180),
+  DEGTORAD: value => value * Math.PI / 180,
+  RADTODEG: value => value * 180 / Math.PI,
+  SQR: value => value * value,
+  SQRT: Math.sqrt,
+  TRUNC: Math.trunc,
+  ARCCOS: value => Math.acos(value) * 180 / Math.PI,
+  ARCSIN: value => Math.asin(value) * 180 / Math.PI,
+  ARCTAN: value => Math.atan(value) * 180 / Math.PI,
+  ATAN: value => Math.atan(value) * 180 / Math.PI,
+  LN: Math.log,
+  LOG10: Math.log10,
+  EXP: Math.exp,
+};
+
 type Node =
   | { kind: "literal"; value: CorpusExpressionValue }
   | { kind: "variable"; name: string }
@@ -221,6 +238,17 @@ function evaluateNode(node: Node, variables: Readonly<Record<string, CorpusExpre
     if (node.name === "MAX" && numbers.length) return Math.max(...numbers);
     if (node.name === "ABS" && numbers.length === 1) return Math.abs(numbers[0]!);
     if (node.name === "ROUND" && numbers.length === 1) return Math.round(numbers[0]!);
+    if (node.name === "LOGN" && numbers.length === 2) {
+      const [base, argument] = numbers as [number, number];
+      if (!Number.isFinite(base) || !Number.isFinite(argument) || base <= 0 || base === 1 || argument <= 0) return null;
+      const result = Math.log(argument) / Math.log(base);
+      return Number.isFinite(result) ? result : null;
+    }
+    const operation = unaryMathFunctions[node.name];
+    if (operation && numbers.length === 1 && Number.isFinite(numbers[0])) {
+      const result = operation(numbers[0]!);
+      return Number.isFinite(result) ? result : null;
+    }
     return null;
   }
   if (node.operator === "AND" || node.operator === "OR") {
@@ -257,8 +285,9 @@ function hasSupportedOperations(node: Node): boolean {
   if (node.kind === "unary") return hasSupportedOperations(node.value);
   if (node.kind === "binary") return hasSupportedOperations(node.left) && hasSupportedOperations(node.right);
   const arityIsValid = node.name === "IF" ? node.arguments.length === 3
+    : node.name === "LOGN" ? node.arguments.length === 2
     : node.name === "MIN" || node.name === "MAX" ? node.arguments.length > 0
-      : (node.name === "ABS" || node.name === "ROUND") && node.arguments.length === 1;
+      : (node.name === "ABS" || node.name === "ROUND" || Object.hasOwn(unaryMathFunctions, node.name)) && node.arguments.length === 1;
   return arityIsValid && node.arguments.every(hasSupportedOperations);
 }
 

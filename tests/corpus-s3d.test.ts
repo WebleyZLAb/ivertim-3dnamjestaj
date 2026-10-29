@@ -126,8 +126,8 @@ test("čita elemente, varijable, daske, materijale, rubove i rupe", () => {
   assert.equal(board.visible, true);
   assert.equal(board.holeCount, 2);
   assert.deepEqual(board.holes, [
-    { groupType: "GRUPA14", name: "KIRNER VIJKA", xExpression: "B/2-16", yExpression: "L/2+16", diameter: 5, depth: 5, plane: 1, angle: 90, machiningMode: 4, machining: { MILTOOL: "103", VIS: "100", THRO: "false" } },
-    { groupType: "GRUPA14", name: "CENTRALNI VIJAK", xExpression: "B/2", yExpression: "L/2", diameter: 10, depth: 15, plane: 1, angle: 0, machiningMode: null, machining: {} },
+    { sourceIndex: 0, groupType: "GRUPA14", name: "KIRNER VIJKA", xExpression: "B/2-16", yExpression: "L/2+16", diameter: 5, depth: 5, plane: 1, angle: 90, machiningMode: 4, machining: { MILTOOL: "103", VIS: "100", THRO: "false" } },
+    { sourceIndex: 1, groupType: "GRUPA14", name: "CENTRALNI VIJAK", xExpression: "B/2", yExpression: "L/2", diameter: 10, depth: 15, plane: 1, angle: 0, machiningMode: null, machining: {} },
   ]);
   assert.deepEqual(board.curvePoints, [
     { index: 0, x: 0, z: 0, style: 0, previousControl: null, nextControl: null, arcRadius: null, arcSmooth: null },
@@ -178,4 +178,14 @@ test("prijavljuje nepoznate tagove umjesto da ih tiho protumači", () => {
 test("odbija neispravan ili pogrešan XML", () => {
   assert.throws(() => parseCorpusS3d("<PROJECTFILE>"), /nije ispravan XML/);
   assert.throws(() => parseCorpusS3d("<OTHER/>"), /nema PROJECTFILE korijen/);
+});
+
+
+test("čuva geometrijske formule elementa i pod-elementa odvojeno od spremljenih rezultata", () => {
+  const xml = `<ELEMENTFILE VER="17"><ELEMENT ENAME="Korpus" EXPOX="0" EYPOS="0" EZPOS="0" EVISINA="820" ESIRINA="600" EDUBINA="560" EXF="" EHF="V"><ELMLIST><ELM ENAME="Fronta" EXPOX="2" EYPOS="102" EZPOS="0" EVISINA="716" ESIRINA="596" EDUBINA="18" EXF="zazor_/2" EYF="pod.y+zazor_/2" EZF="-D" EHF="V-104" ESF="SIRINA-zazor_" EDF="18" EKXF="0" EKYF="90" EKZF="0"/></ELMLIST></ELEMENT></ELEMENTFILE>`;
+  const root = parseCorpusE3d(xml).elements[0]!;
+  assert.deepEqual(root.formulas,{EHF:"V"});
+  assert.deepEqual(root.children[0]!.formulas,{EXF:"zazor_/2",EYF:"pod.y+zazor_/2",EZF:"-D",EHF:"V-104",ESF:"SIRINA-zazor_",EDF:"18",EKXF:"0",EKYF:"90",EKZF:"0"});
+  assert.equal(root.children[0]!.width,596);
+  assert.deepEqual(root.children[0]!.position,[2,102,0]);
 });

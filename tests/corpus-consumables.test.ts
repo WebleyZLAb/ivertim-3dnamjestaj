@@ -27,3 +27,14 @@ test("izvozi potrošni materijal kao UTF-8 CSV", () => {
   assert.match(csv, /KONFIRMAT;CONF/);
   assert.match(csv, /1mm;;K007/);
 });
+
+
+test("skriveni elementi, potomci i ploče izostavljaju svoje okove i trake iz potrošnje i CSV-a", () => {
+  const project = parseCorpusS3d(`<PROJECTFILE VER="17"><ELEMENT ENAME="Vidljiv"><POTROSNI><POTITEM TIP="1" NAZIV="Aktivan" KOMADA="2"/></POTROSNI><DASKE><AD DNAME="Skrivena" VISIBLE="false"><POTROSNI><POTITEM TIP="0" NAZIV="Skrivena traka" KOMADA="4"/></POTROSNI></AD></DASKE><ELMLIST><ELM ENAME="Skriven" EVISIBLE="false"><POTROSNI><POTITEM TIP="1" NAZIV="Skriven okov"/></POTROSNI><ELMLIST><ELM ENAME="Potomak" EVISIBLE="true"><POTROSNI><POTITEM TIP="1" NAZIV="Okov potomka"/></POTROSNI></ELM></ELMLIST></ELM></ELMLIST></ELEMENT></PROJECTFILE>`);
+  const before = JSON.stringify(project);
+  const items = buildCorpusConsumablesList(project.elements);
+  assert.deepEqual(items.map(item => [item.name,item.quantity]), [["Aktivan",2]]);
+  assert.doesNotMatch(corpusConsumablesCsv(items), /Skrivena traka|Skriven okov|Okov potomka/);
+  assert.equal(buildCorpusConsumablesList(project.elements,{includeHidden:true}).length,4);
+  assert.equal(JSON.stringify(project),before);
+});

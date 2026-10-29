@@ -103,7 +103,7 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - vizuelno uređivanje proizvoljne zatvorene konture ravnih segmenata preko Corpus `KRIVULJE` tačaka: 2D pregled sa numerisanim tačkama, X/Z polja, dodavanje, uklanjanje i promjena redoslijeda, pravougaoni i ugaoni-urez predložak, provjera samopresijecanja i automatsko osvježavanje mjera ploče; dokazani lukovi ostaju zaključani
 - dodavanje, zamjena i uklanjanje rubne trake na Corpus `STR0`–`STR3` ivicama ploče uz očuvanje svih POTITEM zapisa koji nisu rubna obrada i trenutno osvježavanje proizvodne liste
 - izvoz izabranog uvezenog ili generisanog elementa kao samostalni `-IVERTIM.E3D` za ponovnu upotrebu u biblioteci
-- radna kopija verzije 9 čuva dodane E3D elemente, izmjene rupa, postojeće `EVAR` vrijednosti i punu strukturu samostalnog E3D modela, uz čitanje starijih kopija verzija 1–8
+- radna kopija verzije 10 čuva dodane E3D elemente, izmjene rupa, postojeće `EVAR` vrijednosti, izmjene izraza ploča i punu strukturu samostalnog E3D modela, uz čitanje starijih kopija verzija 1–9
 - postojeće `EVAR` vrijednosti mogu se uređivati bez promjene njihovih imena, `VARn` redoslijeda ili nepoznatih XML atributa; izrazi se čuvaju kao tekst i izvoze u S3D/E3D
 - novi, samostalni i uvezeni E3D elementi podržavaju i dodavanje, preimenovanje te uklanjanje varijabli; writer obnavlja dokazani neprekinuti `VAR0…VARn` niz, čuva ostale atribute i odbija dvosmislena imena
 - EVAR editor prije čuvanja lokalno prikazuje razriješenu vrijednost, nedostajuće reference, ciklične zavisnosti, nepodržanu sintaksu ili drugi nerješiv izraz; poznati geometrijski aliasi elementa ulaze u analizu, a nepoznata Corpus semantika ostaje samo upozorenje
