@@ -4,6 +4,7 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { analyzeCorpusMacroPayload, decodeCorpusText } from "../lib/corpus-macro.ts";
 import { flattenCorpusS3dElements, parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const sampleLimit = Math.max(0, Number(process.argv[3] ?? 4) || 0);
@@ -18,7 +19,7 @@ let decodeFailures = 0;
 
 for (const file of files) {
   try {
-    const xml = await readFile(file, "utf8");
+    const xml = decodeCorpusTextDocument(await readFile(file)).text;
     const inspection = path.extname(file).toLowerCase() === ".s3d" ? parseCorpusS3d(xml) : parseCorpusE3d(xml);
     parsed += 1;
     for (const element of flattenCorpusS3dElements(inspection.elements)) {

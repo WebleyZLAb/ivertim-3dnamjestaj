@@ -137,19 +137,30 @@ test("radna kopija odbija dodavanje ili brisanje EVAR imena", () => {
 });
 
 test("dodaje, mijenja i briše rupe ploče kroz radnu kopiju", () => {
-  const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica"><RUPE><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RAL="90"/></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`);
+  const project = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica"><RUPE><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RAA="90"/></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`);
   const board = project.elements[0]!.boards[0]!;
   const holes = [{ ...board.holes[0]!, name: "Izmijenjena", xExpression: "B/2" }, {
     groupType: "GRUPA14", name: "Nova", xExpression: "32", yExpression: "L-32", diameter: 8, depth: 12, plane: 1, angle: 90, machiningMode: null, machining: {},
   }];
   const changed = updateCorpusBoardHoles(project.elements, project.elements[0]!, 0, holes);
   assert.equal(changed.updatedElement!.boards[0]!.holeCount, 2);
+  assert.deepEqual(changed.updatedElement!.boards[0]!.holes.map(({ unknownAttributes }) => unknownAttributes), [
+    { RCR: "0", RTLTR: "0", RZA: "0" },
+    { RCR: "0", RTLTR: "0", RZA: "0" },
+  ]);
   const sidecar = createCorpusWorkingCopyFile("rupe.s3d", project.elements, changed.elements);
   assert.equal(sidecar.boardHolesChanges.length, 1);
   const imported = applyCorpusWorkingCopyFile("rupe.s3d", project.elements, sidecar);
   assert.deepEqual(imported[0]!.boards[0]!.holes.map(({ name }) => name), ["Izmijenjena", "Nova"]);
+  assert.deepEqual(imported[0]!.boards[0]!.holes[1]!.unknownAttributes, { RCR: "0", RTLTR: "0", RZA: "0" });
   const emptied = updateCorpusBoardHoles(imported, imported[0]!, 0, []);
   assert.equal(emptied.updatedElement!.boards[0]!.holeCount, 0);
+});
+
+test("ne dodaje proizvodne podrazumijevane atribute nepotpunom zapisu rupe", () => {
+  const project = parseCorpusS3d(`<PROJECTFILE><ELEMENT><DASKE><AD><RUPE><GRUPA14/></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`);
+  const changed = updateCorpusBoardHoles(project.elements, project.elements[0]!, 0, project.elements[0]!.boards[0]!.holes);
+  assert.equal(changed.updatedElement!.boards[0]!.holes[0]!.unknownAttributes, undefined);
 });
 
 test("odbija neispravan E3D zapis u radnoj kopiji verzije 6", () => {

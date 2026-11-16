@@ -1,6 +1,8 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   flattenCorpusS3dElements,
+  corpusBoardPartKind,
+  isCorpusFrontType,
   parseCorpusE3d,
   parseCorpusS3d,
   type CorpusS3dBoard,
@@ -25,18 +27,20 @@ import { analyzeCorpusLayout, corpusContainedLayoutElements, corpusLayoutIssueEl
 import { generateCorpusCabinetE3d, type CorpusCabinetSpec } from "../lib/corpus-generator";
 import { generateCorpusElementE3d, type CorpusElementSpec } from "../lib/corpus-element-generator";
 import { fitCorpusElementToBoards } from "../lib/corpus-element-fit";
-import { buildCorpusCutList, corpusCutListCsv, type CorpusCutListResult } from "../lib/corpus-cutlist";
+import { buildCorpusCutList, corpusCutListCsv, corpusCutListPartCounts, type CorpusCutListResult } from "../lib/corpus-cutlist";
 import { buildCorpusConsumablesList, corpusConsumablesCsv, type CorpusConsumableItem } from "../lib/corpus-consumables";
 import { analyzeCorpusMacroPayload, decodeCorpusText, type CorpusMacroAnalysis } from "../lib/corpus-macro";
 import { corpusCmkDocumentFromDecodedPayloads, parseCorpusCmk, type CorpusCmkDocument } from "../lib/corpus-cmk";
 import { corpusMacroBoardContext, simulateCorpusCmk, type CorpusCmkOperationKind } from "../lib/corpus-cmk-simulation";
 import { resolveCorpusSawPaths, type CorpusSawResolution } from "../lib/corpus-saw";
-import { createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
+import { createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath, selectableCorpusMaterials, type CorpusMaterialRecord } from "../lib/corpus-material-library";
 import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoardLocalContactRectangle } from "../lib/corpus-board-contact";
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
 import { applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
-import { createCorpusRecoverySnapshot, type CorpusRecoverySnapshot } from "../lib/corpus-recovery";
-import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
+import { createCorpusRecoveryOperationQueue, createCorpusRecoverySnapshot, shouldClearCorpusRecovery, type CorpusRecoveryProjectState, type CorpusRecoverySnapshot } from "../lib/corpus-recovery";
+import { decodeCorpusTextDocument } from "../lib/corpus-text";
+import { corpusSafeDownloadFileName } from "../lib/corpus-file-name";
+import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dBoardIdentity, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
 import { clearCorpusRecovery, loadCorpusRecovery, saveCorpusRecovery } from "./recovery-store";
 
@@ -44,6 +48,7 @@ const Room3DView = lazy(() => import("./room-3d").then((module) => ({ default: m
 const Element3DPreview = lazy(() => import("./room-3d").then((module) => ({ default: module.Element3DPreview })));
 
 type LoadedProject = {
+  sessionId: number;
   fileName: string;
   fileSize: number;
   sourceXml: string;
@@ -105,6 +110,7 @@ type LoadedMaterialLibrary = {
   resolutionByUid: ReadonlyMap<string, MaterialResolution>;
   ambiguousUids: number;
   missingPictures: number;
+  selectableMaterials: readonly CorpusMaterialRecord[];
 };
 
 type MaterialResolution =
@@ -144,8 +150,20 @@ export function App() {
   const [materialLibrary, setMaterialLibrary] = useState<LoadedMaterialLibrary | null>(null);
   const [recovery, setRecovery] = useState<CorpusRecoverySnapshot | null>(null);
   const [recoverySaveState, setRecoverySaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const exportNoticeTimerRef = useRef<number | null>(null);
+  const nextProjectSessionRef = useRef(1);
+  const previousRecoveryProjectRef = useRef<CorpusRecoveryProjectState | null>(null);
+  const recoveryQueueRef = useRef(createCorpusRecoveryOperationQueue());
+  const projectOpen = project !== null;
+  const queueRecoveryOperation = useCallback((operation: () => Promise<void>) => {
+    return recoveryQueueRef.current.run(operation);
+  }, []);
   useCloseOnEscape(() => setLibraryOpen(false), libraryOpen);
   useCloseOnEscape(() => setMacroLibraryOpen(false), macroLibraryOpen);
+  useEffect(() => () => {
+    if (exportNoticeTimerRef.current !== null) window.clearTimeout(exportNoticeTimerRef.current);
+  }, []);
   const visibleLibraryFiles = useMemo(() => {
     const needle = libraryQuery.trim().toLocaleLowerCase();
     return libraryFiles
@@ -172,20 +190,40 @@ export function App() {
   }, [project, materialLibrary]);
 
   useEffect(() => {
+    if (projectOpen) return;
     let active = true;
     loadCorpusRecovery()
       .then((snapshot) => { if (active) setRecovery(snapshot); })
       .catch(() => { if (active) setRecoverySaveState("error"); });
     return () => { active = false; };
-  }, []);
+  }, [projectOpen]);
 
   useEffect(() => {
-    if (!project?.dirty) return;
+    if (!project) {
+      previousRecoveryProjectRef.current = null;
+      return;
+    }
+    const previousProject = previousRecoveryProjectRef.current;
+    const currentProject = { sessionId: project.sessionId, fileName: project.fileName, sourceXml: project.sourceXml, dirty: project.dirty };
+    previousRecoveryProjectRef.current = currentProject;
+    if (!project.dirty) {
+      if (!shouldClearCorpusRecovery(previousProject, currentProject)) {
+        setRecoverySaveState("idle");
+        return;
+      }
+      queueRecoveryOperation(clearCorpusRecovery)
+        .then(() => {
+          setRecovery(null);
+          setRecoverySaveState("idle");
+        })
+        .catch(() => setRecoverySaveState("error"));
+      return;
+    }
     setRecoverySaveState("saving");
     const timer = window.setTimeout(() => {
       try {
         const snapshot = createProjectRecoverySnapshot(project);
-        saveCorpusRecovery(snapshot)
+        queueRecoveryOperation(() => saveCorpusRecovery(snapshot))
           .then(() => {
             setRecovery(snapshot);
             setRecoverySaveState("saved");
@@ -196,7 +234,17 @@ export function App() {
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [project]);
+  }, [project, queueRecoveryOperation]);
+
+  useEffect(() => {
+    if (!project?.dirty) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [project?.dirty]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -228,8 +276,10 @@ export function App() {
       const rotation = !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat ? corpusKeyboardRotation(event.key, event.shiftKey) : null;
       if (rotation !== null) {
         event.preventDefault();
-        if (selectedBoardIndex !== null || boardGroupSelection.length > 0) {
-          setError("Rotacija ploča još nije dostupna; Q/E nije primijenjen na cijeli element.");
+        if (modelingScope === "board" && shortcutBoardIndex !== null) {
+          rotateSelectedBoard(shortcutBoardIndex, rotation);
+        } else if (modelingScope === "board-group") {
+          setError("Zajednička rotacija više ploča još nije definisana; Q/E nije primijenjen na cijeli element.");
         } else if (groupSelection.length >= 2) rotateGroup(rotation);
         else if (selected && corpusElementAllowsModeling(selected)) {
           const patch = geometryPatchAt(selected, selected.position as CorpusPosition);
@@ -336,11 +386,13 @@ export function App() {
     }
     setError(null);
     try {
-      const sourceXml = await file.text();
+      const sourceXml = decodeCorpusTextDocument(await file.arrayBuffer()).text;
       const inspection = file.name.toLowerCase().endsWith(".e3d") ? parseCorpusE3d(sourceXml) : parseCorpusS3d(sourceXml);
       loadProject(file.name, file.size, sourceXml, inspection);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Fajl nije moguće otvoriti.");
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -348,7 +400,7 @@ export function App() {
     const standaloneE3dSource = inspection.format === "corpus-e3d" && inspection.elements[0]
       ? { sourceFile: fileName, sourceXml, originalElement: inspection.elements[0] }
       : null;
-    setProject({ fileName, fileSize, sourceXml, inspection, originalInspection: inspection, dirty: false, history: [], future: [], importedE3dSources: [], standaloneE3dSource });
+    setProject({ sessionId: nextProjectSessionRef.current++, fileName, fileSize, sourceXml, inspection, originalInspection: inspection, dirty: false, history: [], future: [], importedE3dSources: [], standaloneE3dSource });
     setSelected(inspection.elements[0] ?? null);
     setSelectedBoardIndex(null);
     setBoardGroupSelection([]);
@@ -424,6 +476,7 @@ export function App() {
         ? { sourceFile: recovery.fileName, sourceXml: recovery.sourceXml, originalElement: originalInspection.elements[0] }
         : null;
       setProject({
+        sessionId: nextProjectSessionRef.current++,
         fileName: recovery.fileName,
         fileSize: recovery.fileSize,
         sourceXml: recovery.sourceXml,
@@ -447,7 +500,7 @@ export function App() {
 
   function discardLocalRecovery() {
     if (!window.confirm("Obrisati posljednju lokalnu sesiju za oporavak? Izvorni S3D/E3D fajl neće biti promijenjen.")) return;
-    clearCorpusRecovery()
+    queueRecoveryOperation(clearCorpusRecovery)
       .then(() => {
         setRecovery(null);
         setRecoverySaveState("idle");
@@ -587,6 +640,28 @@ export function App() {
     if (!result.updatedElement) return;
     setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: result.elements }, dirty: true } : current);
     setSelected(result.updatedElement);
+  }
+
+  function rotateSelectedBoard(boardIndex: number, delta: number): boolean {
+    const board = selected?.boards[boardIndex];
+    if (!selected || !board || !corpusElementAllowsModeling(selected)) return false;
+    const values = [...board.position, board.width, board.height, board.thickness, board.direction, board.angle, board.xAngle, board.zAngle];
+    if (values.some((value) => value === null || !Number.isFinite(value))) {
+      setError("Aktivna ploča nema potpunu dokazanu geometriju za rotaciju.");
+      return false;
+    }
+    updateSelectedBoard(boardIndex, {
+      position: board.position,
+      width: board.width,
+      height: board.height,
+      thickness: board.thickness,
+      direction: board.direction,
+      angle: corpusNormalizedAngle(board.angle! + delta),
+      xAngle: board.xAngle,
+      zAngle: board.zAngle,
+    });
+    setError(null);
+    return true;
   }
 
   function updateSelectedBoardAppearance(boardIndex: number, patch: BoardAppearancePatch) {
@@ -805,7 +880,7 @@ export function App() {
     setSelected(original.elements[0] ?? null);
     setSelectedBoardIndex(null);
     setGroupSelection([]);
-    clearCorpusRecovery().then(() => {
+    queueRecoveryOperation(clearCorpusRecovery).then(() => {
       setRecovery(null);
       setRecoverySaveState("idle");
     }).catch(() => setRecoverySaveState("error"));
@@ -1234,15 +1309,20 @@ export function App() {
     }
   }
 
-  function renameSelectedBoard(boardIndex: number, name: string) {
+  function updateSelectedBoardIdentity(boardIndex: number, name: string, frontType: 2 | null) {
     const target = structuredE3dTarget(boardIndex);
     if (!target || !selected) return;
     try {
       const editedSource = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [selected]);
-      const nextSourceXml = renameCorpusE3dBoard(editedSource, boardIndex, name);
+      const currentFrontType = selected.boards[boardIndex]?.frontType ?? null;
+      const protectedFrontType = currentFrontType !== null && currentFrontType !== 0 && currentFrontType !== 2;
+      if (protectedFrontType && frontType !== null) throw new Error(`TIPFRONTE=${currentFrontType} nije podržan za promjenu vrste dijela.`);
+      const nextSourceXml = protectedFrontType
+        ? renameCorpusE3dBoard(editedSource, boardIndex, name)
+        : replaceCorpusE3dBoardIdentity(editedSource, boardIndex, name, frontType);
       applyStructuredE3dSource(target, nextSourceXml, boardIndex);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Naziv ploče nije moguće promijeniti.");
+      setError(reason instanceof Error ? reason.message : "Naziv ili vrstu dijela nije moguće promijeniti.");
     }
   }
 
@@ -1292,6 +1372,16 @@ export function App() {
       `${JSON.stringify(sidecar, null, 2)}\n`,
       "application/json",
     );
+    showExportNotice("Radna kopija je preuzeta kao IVERTIM Corpus JSON.");
+  }
+
+  function showExportNotice(message: string) {
+    if (exportNoticeTimerRef.current !== null) window.clearTimeout(exportNoticeTimerRef.current);
+    setExportNotice(message);
+    exportNoticeTimerRef.current = window.setTimeout(() => {
+      setExportNotice(null);
+      exportNoticeTimerRef.current = null;
+    }, 6000);
   }
 
   function exportS3dCopy() {
@@ -1312,6 +1402,7 @@ export function App() {
         );
       const extension = isE3d ? "E3D" : "S3D";
       downloadText(`${project!.fileName.replace(/\.(?:s3d|e3d)$/i, "")}-IVERTIM.${extension}`, xml, "application/xml");
+      showExportNotice(`Nova ${extension} kopija je preuzeta; izvorni fajl nije promijenjen.`);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Novu Corpus kopiju nije moguće napraviti.");
@@ -1333,6 +1424,7 @@ export function App() {
       const xml = writeCorpusE3dGeometryCopy(source.sourceXml, [source.originalElement], [selected]);
       const name = source.sourceFile.replace(/\.e3d$/i, "").replace(/[\\/]/g, "-");
       downloadText(`${name}-IVERTIM.E3D`, xml, "application/xml");
+      showExportNotice("Izabrani element je preuzet kao nova E3D kopija.");
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Izabrani E3D nije moguće izvesti.");
@@ -1342,17 +1434,19 @@ export function App() {
   function exportCutList(result = cutList, groupOnly = false) {
     const stem = project!.fileName.replace(/\.(?:s3d|e3d)$/i, "");
     downloadText(`${stem}${groupOnly ? "-OZNACENA-GRUPA" : ""}-KROJNA-LISTA.csv`, corpusCutListCsv(result), "text/csv;charset=utf-8");
+    showExportNotice(`${groupOnly ? "Grupna" : "Projektna"} krojna lista je preuzeta kao CSV.`);
   }
 
   function exportConsumables(items: readonly CorpusConsumableItem[] = consumablesList, groupOnly = false) {
     const stem = project!.fileName.replace(/\.(?:s3d|e3d)$/i, "");
     downloadText(`${stem}${groupOnly ? "-OZNACENA-GRUPA" : ""}-POTROSNI-MATERIJAL.csv`, corpusConsumablesCsv(items), "text/csv;charset=utf-8");
+    showExportNotice(`${groupOnly ? "Grupna" : "Projektna"} lista potrošnog materijala je preuzeta kao CSV.`);
   }
 
   async function importE3dElement(file: File | undefined) {
     if (!file || project!.inspection.format !== "corpus-s3d") return;
     try {
-      const sourceXml = await file.text();
+      const sourceXml = decodeCorpusTextDocument(await file.arrayBuffer()).text;
       addE3dSource(libraryFilePath(file), sourceXml);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "E3D element nije moguće dodati projektu.");
@@ -1380,6 +1474,7 @@ export function App() {
     setSelectedBoardIndex(null);
     setGroupSelection([]);
     setLibraryOpen(false);
+    setViewMode("data");
     setError(null);
   }
 
@@ -1434,7 +1529,7 @@ export function App() {
       const allFiles = Array.from(files);
       const catalogs = await Promise.all(allFiles
         .filter((file) => /^matdat\.(?:mxc|k3x)$/i.test(file.name))
-        .map(async (file) => parseCorpusMaterialCatalog(await file.text(), libraryFilePath(file))));
+        .map(async (file) => parseCorpusMaterialCatalog(decodeCorpusTextDocument(await file.arrayBuffer()).text, libraryFilePath(file))));
       if (!catalogs.length) throw new Error("Izabrani folder ne sadrži MatDat.MXC/K3X kataloge.");
       const filesByPath = new Map(allFiles.map((file) => [normalizeLibraryPath(libraryFilePath(file)), file]));
       const index = createCorpusMaterialIndex(catalogs);
@@ -1470,6 +1565,7 @@ export function App() {
         folderName: firstPath.split("/")[0] || "elmtex", catalogCount: catalogs.length,
         recordCount: catalogs.reduce((sum, catalog) => sum + catalog.records.length, 0),
         textureByUid, resolutionByUid, ambiguousUids, missingPictures,
+        selectableMaterials: selectableCorpusMaterials(index),
       });
       setError(null);
     } catch (reason) {
@@ -1553,7 +1649,8 @@ export function App() {
               </div>
             </details>
           )}
-          <button className="primary-command" onClick={() => inputRef.current?.click()}>Otvori projekat</button>
+          {project.dirty && <button className="primary-command" title="Preuzmi novu Corpus kopiju bez promjene izvornog fajla" onClick={exportS3dCopy}>Izvezi {project.inspection.format === "corpus-e3d" ? "E3D" : "S3D"}</button>}
+          <button className={project.dirty ? "secondary-button" : "primary-command"} onClick={() => inputRef.current?.click()}>Otvori projekat</button>
           <details ref={moreMenuRef} className="command-menu">
             <summary>Više</summary>
             <div>
@@ -1580,7 +1677,7 @@ export function App() {
               <button aria-label={`${materialLibrary ? `Teksture (${projectTextureMatches})` : "Učitaj teksture"} — Corpus elmtex katalog`} onClick={() => {
                 moreMenuRef.current?.removeAttribute("open");
                 materialLibraryInputRef.current?.click();
-              }} title={materialLibrary ? `${materialLibrary.recordCount} zapisa · ${materialLibrary.textureByUid.size} jednoznačnih slika · ${projectTextureMatches} ploča u projektu` : "Izaberi lokalni Corpus elmtex folder; ništa se ne šalje niti mijenja"}><strong>{materialLibrary ? `Teksture (${projectTextureMatches})` : "Učitaj teksture"}</strong><span>Corpus elmtex katalog</span></button>
+              }} title={materialLibrary ? `${materialLibrary.recordCount} zapisa · ${materialLibrary.selectableMaterials.length} sigurnih za izbor · ${materialLibrary.textureByUid.size} jednoznačnih slika · ${projectTextureMatches} ploča u projektu` : "Izaberi lokalni Corpus elmtex folder; ništa se ne šalje niti mijenja"}><strong>{materialLibrary ? `Teksture (${projectTextureMatches})` : "Učitaj teksture"}</strong><span>Corpus elmtex katalog</span></button>
               <button aria-label="Učitaj radnu kopiju — IVERTIM Corpus JSON" onClick={() => {
                 moreMenuRef.current?.removeAttribute("open");
                 workingCopyInputRef.current?.click();
@@ -1694,7 +1791,7 @@ export function App() {
         <Metric label="Prostorija" value={`${formatNumber(project.inspection.room.width)} × ${formatNumber(project.inspection.room.length)} m`} />
         <Metric label="Visina" value={`${formatNumber(corpusRoomTotalHeight(project.inspection.room.height, project.inspection.room.lowerHeight))} m`} />
         <Metric label="Elemenata" value={String(allElements.length)} />
-        <Metric label="Ploča" value={String(boards)} />
+        <Metric label="Dijelova" value={String(boards)} />
         <Metric label="Potrošnih stavki" value={String(consumables)} />
         <Metric label="Provjera rasporeda" value={layoutIssues.length ? `${layoutIssues.length} upozorenja` : "Bez preklapanja"} warning={layoutIssues.length > 0} title={layoutIssues.map(({ message }) => message).join("\n")} />
       </section>}
@@ -1728,7 +1825,7 @@ export function App() {
 
         <section className={viewMode !== "data" && viewMode !== "room" && viewMode !== "cutlist" ? "detail-panel drawing-panel" : "detail-panel"}>
           {viewMode === "room" ? (
-            <RoomEditor room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} />
+            <RoomEditor room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onCreateCabinet={() => setGeneratorOpen(true)} onCreateElement={() => setElementCreatorOpen(true)} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} />
           ) : viewMode === "cutlist" ? (
             <CutListView result={cutList} consumables={consumablesList} groupResult={groupCutList} groupConsumables={groupConsumablesList} groupCount={selectedGroupElements.length} onExport={exportCutList} onExportConsumables={exportConsumables} />
           ) : viewMode === "drawing" ? (
@@ -1757,7 +1854,7 @@ export function App() {
               />
             </Suspense>
           ) : (
-            selected ? <ElementDetails key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onRenameBoard={renameSelectedBoard} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={exportSelectedE3d} canChangeStructure={(project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && corpusElementAllowsModeling(selected)} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => setViewMode("cutlist")} /> : <EmptyDetails />
+            selected ? <ElementDetails key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onUpdateBoardIdentity={updateSelectedBoardIdentity} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={exportSelectedE3d} canChangeStructure={(project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && corpusElementAllowsModeling(selected)} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => setViewMode("cutlist")} /> : <EmptyDetails />
           )}
         </section>
         {(viewMode === "drawing" || viewMode === "threeD") && (
@@ -1788,12 +1885,13 @@ export function App() {
                   <button className="inspector-primary" onClick={() => setViewMode("data")}>{selectedBoardIndex !== null ? "Uredi ploču" : "Uredi element"}</button>
                   <div className="inspector-actions" aria-label="Osnovne radnje nad izborom">
                     {selectedBoardIndex === null && <><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° ulijevo" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(-90)}>↶ −90°</button><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° udesno" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(90)}>↷ +90°</button></>}
+                    {selectedBoardIndex !== null && <><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj aktivnu ploču 90° ulijevo (Q)" : "Element je zaključan ili označen kao neurediv"} onClick={() => rotateSelectedBoard(selectedBoardIndex, -90)}>↶ −90°</button><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj aktivnu ploču 90° udesno (E)" : "Element je zaključan ili označen kao neurediv"} onClick={() => rotateSelectedBoard(selectedBoardIndex, 90)}>↷ +90°</button></>}
                     {selectedBoardIndex === null && selectedCanCopy && <button onClick={() => duplicateImportedElement()}>Kopiraj</button>}
                     {selectedBoardIndex === null && selectedCanRemove && <button className="danger" onClick={removeImportedElement}>Ukloni</button>}
                     {selectedBoardIndex !== null && selectedBoardCanChange && <button onClick={() => duplicateSelectedBoard(selectedBoardIndex)}>Kopiraj ploču</button>}
                     {selectedBoardIndex !== null && selectedBoardCanChange && selected.boards.length > 1 && <button className="danger" onClick={() => removeSelectedBoard(selectedBoardIndex)}>Ukloni ploču</button>}
                   </div>
-                  <p className="inspector-help"><strong>Osnovne kontrole prostorije</strong><span>Klik bira cijeli element</span><span>Ctrl/Shift + klik označava grupu elemenata</span><span>Strelice pomjeraju po X/Z</span><span>Page Up/Down pomjera po Y</span></p>
+                  <p className="inspector-help"><strong>Osnovne kontrole prostorije</strong><span>Klik bira cijeli element ili ploču</span><span>Ctrl/Shift + klik označava grupu</span><span>Strelice pomjeraju po X/Z</span><span>Page Up/Down pomjera po Y</span><span>Q/E rotira aktivni izbor</span></p>
                 </>
               ) : (
                 <div className="inspector-empty"><span>◇</span><strong>Ništa nije izabrano</strong><p>Klikni element ili ploču u canvasu da vidiš osnovna svojstva.</p></div>
@@ -1803,9 +1901,9 @@ export function App() {
         )}
       </main>
 
-      <footer className="statusbar">
+      <footer className="statusbar" aria-live="polite">
         <span><i className={`status-dot ${project.dirty ? "status-dot-dirty" : ""}`} /> {project.dirty ? "Izmjene su samo u radnoj kopiji" : "Izvorni projekat otvoren samo za čitanje"}</span>
-        <span>{error ?? (materialLibrary ? `${materialLibrary.folderName}: ${materialLibrary.catalogCount} kataloga · ${materialLibrary.textureByUid.size} tekstura · ${materialLibrary.ambiguousUids} dvosmislenih UID-a · ${materialLibrary.missingPictures} bez slike` : null) ?? layoutIssues[0]?.message ?? (project.inspection.unknownTopLevelTags.length ? `${project.inspection.unknownTopLevelTags.length} nepoznatih sekcija` : "Struktura prepoznata")}</span>
+        <span>{error ?? exportNotice ?? (materialLibrary ? `${materialLibrary.folderName}: ${materialLibrary.catalogCount} kataloga · ${materialLibrary.selectableMaterials.length} sigurnih materijala · ${materialLibrary.textureByUid.size} tekstura · ${materialLibrary.ambiguousUids} dvosmislenih UID-a · ${materialLibrary.missingPictures} bez slike` : null) ?? layoutIssues[0]?.message ?? (project.inspection.unknownTopLevelTags.length ? `${project.inspection.unknownTopLevelTags.length} nepoznatih sekcija` : "Struktura prepoznata")}</span>
       </footer>
     </div>
     </MaterialLibraryContext.Provider>
@@ -2033,12 +2131,14 @@ function CabinetGeneratorDialog({ onCreate, onClose }: { onCreate(spec: CorpusCa
             : <label><span>Položaji od lijeve unutrašnje ivice</span><input value={dividerPositions} onChange={(event) => setDividerPositions(event.target.value)} placeholder="300; 600" /></label>}
           <label><span>Prednji uvlak police</span><div><input inputMode="decimal" value={shelfFrontInset} onChange={(event) => setShelfFrontInset(event.target.value)} /><small>mm</small></div></label>
           <label><span>Zadnji uvlak police</span><div><input inputMode="decimal" value={shelfRearInset} onChange={(event) => setShelfRearInset(event.target.value)} /><small>mm</small></div></label>
+          <CatalogMaterialSelect label="Materijal korpusa iz kataloga" onSelect={(material) => { setMaterialName(material.name); setMaterialUid(material.uid); }} />
           <label><span>Materijal</span><input value={materialName} onChange={(event) => setMaterialName(event.target.value)} /></label>
           <label><span>MATUID materijala</span><input value={materialUid} onChange={(event) => setMaterialUid(event.target.value)} placeholder="opciono" /></label>
           <label><span>Boja</span><input type="color" value={color} onChange={(event) => setColor(event.target.value)} /></label>
           <label><span>Poleđina</span><select value={backType} onChange={(event) => setBackType(event.target.value as "none" | "panel" | "thin")}><option value="none">Bez leđa</option><option value="panel">Pločasta leđa unutra</option><option value="thin">Tanka HDF leđa pozadi</option></select></label>
           {backType === "thin" && <>
             <label><span>Debljina HDF-a</span><div><input inputMode="decimal" value={backThickness} onChange={(event) => setBackThickness(event.target.value)} /><small>mm</small></div></label>
+            <CatalogMaterialSelect label="HDF iz kataloga" onSelect={(material) => { setBackMaterialName(material.name); setBackMaterialUid(material.uid); }} />
             <label><span>Materijal HDF-a</span><input value={backMaterialName} onChange={(event) => setBackMaterialName(event.target.value)} /></label>
             <label><span>MATUID HDF-a</span><input value={backMaterialUid} onChange={(event) => setBackMaterialUid(event.target.value)} placeholder="opciono" /></label>
             <label><span>Boja HDF-a</span><input type="color" value={backColor} onChange={(event) => setBackColor(event.target.value)} /></label>
@@ -2062,6 +2162,7 @@ function CabinetGeneratorDialog({ onCreate, onClose }: { onCreate(spec: CorpusCa
               : <label><span>Omjeri fronti</span><input value={frontRatios} onChange={(event) => setFrontRatios(event.target.value)} placeholder="1; 2; 1" /></label>}
             <label><span>Debljina fronte</span><div><input inputMode="decimal" value={frontThickness} onChange={(event) => setFrontThickness(event.target.value)} /><small>mm</small></div></label>
             <label><span>Zazor fronte</span><div><input inputMode="decimal" value={frontGap} onChange={(event) => setFrontGap(event.target.value)} /><small>mm</small></div></label>
+            <CatalogMaterialSelect label="Fronta iz kataloga" onSelect={(material) => { setFrontMaterialName(material.name); setFrontMaterialUid(material.uid); }} />
             <label><span>Materijal fronte</span><input value={frontMaterialName} onChange={(event) => setFrontMaterialName(event.target.value)} /></label>
             <label><span>MATUID fronte</span><input value={frontMaterialUid} onChange={(event) => setFrontMaterialUid(event.target.value)} placeholder="nasljeđuje korpus" /></label>
             <label><span>Boja fronte</span><input type="color" value={frontColor} onChange={(event) => setFrontColor(event.target.value)} /></label>
@@ -2074,11 +2175,20 @@ function CabinetGeneratorDialog({ onCreate, onClose }: { onCreate(spec: CorpusCa
   );
 }
 
+function CatalogMaterialSelect({ label, onSelect }: { label: string; onSelect(material: CorpusMaterialRecord): void }) {
+  const library = useContext(MaterialLibraryContext);
+  if (!library) return null;
+  return <label><span>{label}</span><select value="" disabled={!library.selectableMaterials.length} title={library.selectableMaterials.length ? "Nudi samo jednoznačne neprazne MUID zapise" : "U učitanom katalogu nema jednoznačnih MUID zapisa"} onChange={(event) => {
+    const material = library.selectableMaterials[Number(event.target.value)];
+    if (material) onSelect(material);
+  }}><option value="">{library.selectableMaterials.length ? "Izaberi jednoznačan materijal…" : "Nema sigurnih materijala"}</option>{library.selectableMaterials.map((material, index) => <option key={`${material.sourceCatalog}:${material.recordIndex}`} value={index}>{material.name || "Bez naziva"} · {material.uid}</option>)}</select></label>;
+}
+
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand ${compact ? "brand-compact" : ""}`}>
       <span className="brand-mark"><i /><i /><i /></span>
-      <div><strong>IVERTIM</strong><span>CORPUS</span></div>
+      <div><strong>IVERTIM</strong><span>CORPUS <small>v1.0</small></span></div>
     </div>
   );
 }
@@ -2129,21 +2239,31 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
   const activeResult = groupOnly ? groupResult : result;
   const activeConsumables = groupOnly ? groupConsumables : consumables;
   const validBoards = activeResult.totalBoards - activeResult.skippedBoards;
+  const partCounts = corpusCutListPartCounts(activeResult);
+  const skippedReasonSummary = Object.entries(activeResult.skippedReasons).map(([reason, count]) => `${count}× ${reason}`).join(" · ");
   return (
     <div className="detail-content cutlist-page">
       <div className="detail-title">
-        <div><p className="eyebrow">Proizvodni pregled</p><h2>{groupOnly ? "Krojna lista označene grupe" : "Krojna lista projekta"}</h2><span>Grupisano po materijalu i izvornim Corpus mjerama VISINA × DUBINA × DEBLJINA</span></div>
+        <div><p className="eyebrow">Proizvodni pregled</p><h2>{groupOnly ? "Krojna lista označene grupe" : "Krojna lista projekta"}</h2><span>Grupisano po vrsti dijela, materijalu i izvornim Corpus mjerama VISINA × DUBINA × DEBLJINA</span></div>
         <button className="primary-button" disabled={!activeResult.items.length} title={activeResult.items.length ? "Izvezi prikazanu krojnu listu kao CSV" : "Nema potpunih proizvodnih mjera za CSV izvoz"} onClick={() => onExport(activeResult, groupOnly)}>Izvezi CSV</button>
       </div>
       <div className="cutlist-scope-switch" aria-label="Obuhvat proizvodne liste"><button aria-current={!groupOnly ? "true" : undefined} className={!groupOnly ? "active" : ""} onClick={() => setScope("project")}>Cijeli projekat</button><button aria-current={groupOnly ? "true" : undefined} className={groupOnly ? "active" : ""} disabled={!groupCount} title={groupCount ? "Prikaži proizvodne podatke samo za označene elemente" : "Prvo označi najmanje jedan element u strukturi projekta"} onClick={() => setScope("group")}>Označena grupa ({groupCount})</button></div>
       <div className="cutlist-summary">
-        <Property label="Ploča sa mjerama" value={String(validBoards)} />
+        <Property label="Dijelova sa mjerama" value={String(validBoards)} />
+        <Property label="Ploča" value={String(partCounts.board)} />
+        <Property label="Fronti" value={String(partCounts.front)} />
+        <Property label="Pomoćnih dijelova" value={String(partCounts.auxiliary)} />
+        {partCounts.unknown > 0 && <Property label="Nepoznatih dijelova" value={String(partCounts.unknown)} />}
         <Property label="Grupa za krojenje" value={String(activeResult.items.length)} />
         <Property label="Preskočeno bez mjera" value={String(activeResult.skippedBoards)} />
       </div>
+      {activeResult.skippedBoards > 0 && <div className="evidence-warning"><strong>Preskočeni dijelovi nisu u CSV-u.</strong><span>{skippedReasonSummary}</span></div>}
+      {partCounts.auxiliary > 0 && <div className="evidence-warning"><strong>Pomoćni dijelovi su zadržani i jasno označeni.</strong><span>Ne uklanjamo TIPFRONTE 5 iz proizvodnog izvoza bez potvrde iz stvarnog Corpus toka.</span></div>}
+      {partCounts.unknown > 0 && <div className="evidence-warning"><strong>Lista sadrži nepoznatu vrstu dijela.</strong><span>Provjeri TIPFRONTE prije proizvodnog izvoza.</span></div>}
       {activeResult.items.length ? <div className="board-table-wrap cutlist-table-wrap"><table className="board-table cutlist-table">
-        <thead><tr><th>Materijal</th><th>VISINA</th><th>DUBINA</th><th>Debljina</th><th>Kom.</th><th>Rupe</th><th>Elementi / ploče</th></tr></thead>
-        <tbody>{activeResult.items.map((item, index) => <tr key={`${item.materialUid}-${item.materialName}-${item.height}-${item.width}-${item.thickness}-${index}`}>
+        <thead><tr><th>Vrsta</th><th>Materijal</th><th>VISINA</th><th>DUBINA</th><th>Debljina</th><th>Kom.</th><th>Rupe</th><th>Elementi / dijelovi</th></tr></thead>
+        <tbody>{activeResult.items.map((item, index) => <tr key={`${item.materialUid}-${item.materialName}-${item.frontType}-${item.height}-${item.width}-${item.thickness}-${index}`}>
+          <td><strong>{corpusBoardPartKind(item.frontType) === "front" ? "Fronta" : corpusBoardPartKind(item.frontType) === "auxiliary" ? "Pomoćni dio" : corpusBoardPartKind(item.frontType) === "unknown" ? "Nepoznat dio" : "Ploča"}</strong>{item.frontType !== null && item.frontType !== 0 && <small>TIPFRONTE {formatNumber(item.frontType)}</small>}</td>
           <td><strong>{item.materialName}</strong>{item.materialUid && <small>{item.materialUid}</small>}</td>
           <td>{formatMillimeters(item.height)}</td>
           <td>{formatMillimeters(item.width)}</td>
@@ -2168,17 +2288,19 @@ function CutListView({ result, consumables, groupResult, groupConsumables, group
           </tr>)}</tbody>
         </table></div> : <p className="empty-copy">Projekat nema POTITEM zapise.</p>}
       </section>
-      <div className="evidence-warning"><strong>Mjere nisu automatski rotirane niti normalizovane.</strong><span>CSV čuva izvorni Corpus redoslijed VISINA i DUBINA, materijal, broj rupa i trag do elementa. Ploče bez pozitivne tri mjere su jasno preskočene.</span></div>
+      <div className="evidence-warning"><strong>Mjere nisu automatski rotirane niti normalizovane.</strong><span>CSV čuva izvorni Corpus redoslijed VISINA i DUBINA, vrstu dijela, TIPFRONTE, materijal, broj rupa i trag do elementa. Dijelovi bez pozitivne tri mjere su jasno preskočeni.</span></div>
     </div>
   );
 }
 
 type RoomForm = { width: string; length: string; height: string; lowerHeight: string };
 
-function RoomEditor({ room, elements, groupElements, onInspectIssue, onContainIssue, onSeparateIssue, onUpdate, onDistribute, onUndo, canUndo }: {
+function RoomEditor({ room, elements, groupElements, onCreateCabinet, onCreateElement, onInspectIssue, onContainIssue, onSeparateIssue, onUpdate, onDistribute, onUndo, canUndo }: {
   room: CorpusS3dRoom;
   elements: readonly CorpusS3dElement[];
   groupElements: readonly CorpusS3dElement[];
+  onCreateCabinet(): void;
+  onCreateElement(): void;
   onInspectIssue(elements: readonly CorpusS3dElement[]): void;
   onContainIssue(elements: readonly CorpusS3dElement[]): void;
   onSeparateIssue(elements: readonly CorpusS3dElement[], axis: CorpusLayoutSeparationAxis): void;
@@ -2229,6 +2351,10 @@ function RoomEditor({ room, elements, groupElements, onInspectIssue, onContainIs
           </section>
         </div>
       </details>
+      {!elements.length && <section className="room-starter" aria-label="Početak novog projekta">
+        <div><span>01</span><div><strong>Dodaj prvi element u prostoriju</strong><p>Počni gotovim parametarskim korpusom ili praznim elementom sa jednom pločom.</p></div></div>
+        <div className="room-starter-actions"><button className="primary-button" onClick={onCreateCabinet}>Napravi prvi korpus</button><button className="secondary-button" onClick={onCreateElement}>Novi prazan element</button></div>
+      </section>}
       <RoomDistributionEditor elements={elements} onDistribute={onDistribute} />
       <RoomLayoutInspection elements={elements} groupElements={groupElements} room={room} onInspectIssue={onInspectIssue} onContainIssue={onContainIssue} onSeparateIssue={onSeparateIssue} />
       <div className="evidence-warning"><strong>Corpus visina je zbir dva polja.</strong><span>3D koristi VISINA + VISINALOW, isto kao dokazani projekti iz D:\sobasav.</span></div>
@@ -2704,7 +2830,7 @@ function GroupTransformEditor({ count, bounds, roomClearances, canTransform, onT
   </section>;
 }
 
-function ElementDetails({ element, room, placementElements, groupSelection, canEdit, canTransformGroup, onTranslateGroup, onPositionGroup, onAlignGroup, onDistributeGroup, onSpaceGroup, onRotateGroup, onContainGroup, onCenterGroup, onPlaceGroupAtRoomSide, onSnapGroup, onDuplicateGroup, onDuplicateGroupGrid, onRemoveGroup, canRemoveGroup, onSetGroupVisibility, onIsolateGroup, onShowAllRoots, onClearGroup, selectedBoardIndex, boardSelection, onBoardSelectionChange, onSelectBoard, onUpdate, onFitToBoards, onUpdateIdentity, onUpdateVariables, onUpdateBoard, onUpdateBoardAppearance, onUpdateBoardHoles, onUpdateBoardContour, onUpdateBoardEdgeBanding, onAddBoard, onRenameBoard, onMoveBoard, onDuplicateBoard, onDuplicateBoardArray, onDuplicateBoardGrid, onTranslateBoards, onDistributeBoards, onAlignBoards, onPlaceBoards, onDuplicateBoards, onRemoveBoards, onApplyBoardAppearance, onSetBoardsVisibility, onDistributeBoardArray, onRemoveBoard, onUndo, onRemoveImported, onDuplicateImported, onExportSelectedE3d, canChangeStructure, canRemoveImported, canExportE3d, canDuplicate, canUndo, onOpenProduction }: {
+function ElementDetails({ element, room, placementElements, groupSelection, canEdit, canTransformGroup, onTranslateGroup, onPositionGroup, onAlignGroup, onDistributeGroup, onSpaceGroup, onRotateGroup, onContainGroup, onCenterGroup, onPlaceGroupAtRoomSide, onSnapGroup, onDuplicateGroup, onDuplicateGroupGrid, onRemoveGroup, canRemoveGroup, onSetGroupVisibility, onIsolateGroup, onShowAllRoots, onClearGroup, selectedBoardIndex, boardSelection, onBoardSelectionChange, onSelectBoard, onUpdate, onFitToBoards, onUpdateIdentity, onUpdateVariables, onUpdateBoard, onUpdateBoardAppearance, onUpdateBoardHoles, onUpdateBoardContour, onUpdateBoardEdgeBanding, onAddBoard, onUpdateBoardIdentity, onMoveBoard, onDuplicateBoard, onDuplicateBoardArray, onDuplicateBoardGrid, onTranslateBoards, onDistributeBoards, onAlignBoards, onPlaceBoards, onDuplicateBoards, onRemoveBoards, onApplyBoardAppearance, onSetBoardsVisibility, onDistributeBoardArray, onRemoveBoard, onUndo, onRemoveImported, onDuplicateImported, onExportSelectedE3d, canChangeStructure, canRemoveImported, canExportE3d, canDuplicate, canUndo, onOpenProduction }: {
   element: CorpusS3dElement;
   room: CorpusS3dRoom;
   placementElements: readonly CorpusS3dElement[];
@@ -2743,7 +2869,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   onUpdateBoardContour(boardIndex: number, points: readonly CorpusStraightContourPoint[]): void;
   onUpdateBoardEdgeBanding(boardIndex: number, spec: CorpusEdgeBandingSpec): void;
   onAddBoard(spec: CorpusNewBoardSpec): void;
-  onRenameBoard(boardIndex: number, name: string): void;
+  onUpdateBoardIdentity(boardIndex: number, name: string, frontType: 2 | null): void;
   onMoveBoard(boardIndex: number, direction: -1 | 1): void;
   onDuplicateBoard(boardIndex: number): void;
   onDuplicateBoardArray(boardIndex: number, count: number, offset: CorpusCopyOffset): void;
@@ -2801,7 +2927,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
   const elementCutList = useMemo(() => buildCorpusCutList([element]), [element]);
   const elementConsumables = useMemo(() => buildCorpusConsumablesList([element]), [element]);
   const elementHoleCount = element.boards.reduce((total, board) => total + board.holeCount, 0);
-  const elementFrontCount = element.boards.filter((board) => board.frontType !== null).length;
+  const elementFrontCount = element.boards.filter((board) => isCorpusFrontType(board.frontType)).length;
   const groupBounds = useMemo(() => corpusGroupBounds(placementElements, groupSelection), [placementElements, groupSelection]);
   const groupRoomClearances = useMemo(() => corpusGroupRoomClearances(placementElements, groupSelection, room), [placementElements, groupSelection, room]);
   const validBoardSelection = boardSelection.filter((index) => index >= 0 && index < element.boards.length);
@@ -2901,14 +3027,14 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
       </>}
 
       {editorTab === "construction" && <section className="data-section">
-        <div className="section-title"><h3>Ploče</h3><span>{element.boards.length}</span>{canChangeStructure && <button className="secondary-button" onClick={() => setBoardCreatorOpen(true)}>Dodaj ploču</button>}</div>
+        <div className="section-title"><h3>Ploče i fronte</h3><span>{element.boards.length}</span>{canChangeStructure && <button className="secondary-button" onClick={() => setBoardCreatorOpen(true)}>Dodaj dio</button>}</div>
         {element.boards.length ? (
           <div className="board-table-wrap"><table className="board-table">
             <thead><tr><th aria-label="Grupni izbor ploča">✓</th><th>Naziv</th><th>Dimenzije</th><th>Smjer</th><th>Kontura</th><th>Materijal</th><th>Rupe</th></tr></thead>
             <tbody>{element.boards.map((board, index) => (
               <tr key={`${board.name}-${index}`} className={selectedBoardIndex === index ? "selected" : ""} tabIndex={0} onClick={() => onSelectBoard(index)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectBoard(index); }}>
                 <td><input type="checkbox" aria-label={`Označi ploču ${board.name || index + 1}`} checked={validBoardSelection.includes(index)} onClick={(event) => event.stopPropagation()} onChange={() => toggleBoardSelection(index)} /></td>
-                <td><strong>{board.name || `Ploča ${index + 1}`}</strong>{board.frontType !== null && <small className="board-part-kind">Fronta · TIPFRONTE {formatNumber(board.frontType)}</small>}</td>
+                <td><strong>{board.name || `Ploča ${index + 1}`}</strong>{board.frontType !== null && board.frontType !== 0 && <small className="board-part-kind">{corpusBoardPartKind(board.frontType) === "front" ? "Fronta" : corpusBoardPartKind(board.frontType) === "auxiliary" ? "Pomoćni dio" : "Nepoznat dio"} · TIPFRONTE {formatNumber(board.frontType)}</small>}</td>
                 <td>{formatMillimeters(board.width)} × {formatMillimeters(board.height)} × {formatMillimeters(board.thickness)}</td>
                 <td>{formatBoardDirection(board.direction)}</td>
                 <td>{board.curvePoints.length ? `${board.curvePoints.length} tač. ${board.curveIsApproximate ? "· luk" : "· ravno"}` : "—"}</td>
@@ -2953,14 +3079,14 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
           {boardGroupMessage && <p className="placement-message">{boardGroupMessage}</p>}
         </div>}
         {canEdit && selectedBoardIndex !== null && element.boards[selectedBoardIndex] && (
-          <><BoardGeometryEditor element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onRename={onRenameBoard} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} />
+          <><BoardGeometryEditor element={element} board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} boardCount={element.boards.length} onUpdate={onUpdateBoard} onUpdateIdentity={onUpdateBoardIdentity} onMove={onMoveBoard} onDuplicate={onDuplicateBoard} onDuplicateArray={onDuplicateBoardArray} onDuplicateGrid={onDuplicateBoardGrid} onDistributeArray={onDistributeBoardArray} onRemove={onRemoveBoard} canChangeStructure={canChangeStructure} canRemove={canChangeStructure && element.boards.length > 1} />
           <BoardContourEditor board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} onUpdate={onUpdateBoardContour} canChange={canChangeStructure} />
           <BoardEdgeBandingEditor board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} onUpdate={onUpdateBoardEdgeBanding} canChange={canChangeStructure} /></>
         )}
       </section>}
 
       {editorTab === "materials" && <section className="data-section">
-        {selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <div className="active-board-context"><strong>Aktivna ploča</strong><span>{element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`} · dio elementa {element.name || "bez naziva"}</span></div> : <p className="empty-copy">Izaberi ploču u lijevom 3D prikazu ili u kartici Konstrukcija da urediš njen materijal.</p>}
+        {selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <div className="active-board-context"><strong>{isCorpusFrontType(element.boards[selectedBoardIndex]!.frontType) ? "Aktivna fronta" : corpusBoardPartKind(element.boards[selectedBoardIndex]!.frontType) === "auxiliary" ? "Aktivni pomoćni dio" : "Aktivna ploča"}</strong><span>{element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`} · dio elementa {element.name || "bez naziva"}</span></div> : <p className="empty-copy">Izaberi ploču ili frontu u lijevom 3D prikazu ili u kartici Konstrukcija da urediš njen materijal.</p>}
         {selectedBoardIndex !== null && element.boards[selectedBoardIndex] && <><BoardMaterialPreview board={element.boards[selectedBoardIndex]} />{canEdit && <BoardAppearanceEditor board={element.boards[selectedBoardIndex]} boardIndex={selectedBoardIndex} onUpdate={onUpdateBoardAppearance} />}</>}
         <div className="element-material-summary"><div className="section-title"><h3>Svi materijali elementa</h3><span>{materials.length}</span></div>
           {materials.length ? <ul className="material-list">{materials.map(([name, count]) => <li key={name}><span className="material-swatch" /><span>{name}</span><strong>{count}×</strong></li>)}</ul> : <p className="empty-copy">Nema materijala.</p>}
@@ -2968,7 +3094,7 @@ function ElementDetails({ element, room, placementElements, groupSelection, canE
       {editorTab === "variables" && <section className="data-section"><ElementVariablesEditor element={element} canEdit={canEdit} canChangeStructure={canChangeStructure} onUpdate={onUpdateVariables} /></section>}
 
       {editorTab === "operations" && <section className="data-section">
-        {selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <><div className="active-board-context"><strong>Aktivna ploča</strong><span>{element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`} · {element.boards[selectedBoardIndex]!.holeCount} rupa</span></div>{canEdit && <BoardHoleEditor board={element.boards[selectedBoardIndex]} onUpdate={(holes) => onUpdateBoardHoles(selectedBoardIndex, holes)} />}<BoardMachiningDetails board={element.boards[selectedBoardIndex]} /></> : <p className="empty-copy">Izaberi ploču u lijevom 3D prikazu ili u kartici Konstrukcija da pregledaš njene rupe i obrade.</p>}
+        {selectedBoardIndex !== null && element.boards[selectedBoardIndex] ? <><div className="active-board-context"><strong>{isCorpusFrontType(element.boards[selectedBoardIndex]!.frontType) ? "Aktivna fronta" : corpusBoardPartKind(element.boards[selectedBoardIndex]!.frontType) === "auxiliary" ? "Aktivni pomoćni dio" : "Aktivna ploča"}</strong><span>{element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`} · {element.boards[selectedBoardIndex]!.holeCount} rupa{element.boards[selectedBoardIndex]!.invalidHoleCount ? ` · ${element.boards[selectedBoardIndex]!.invalidHoleCount} neupotrebljivih` : ""}</span></div>{canEdit && <BoardHoleEditor board={element.boards[selectedBoardIndex]} onUpdate={(holes) => onUpdateBoardHoles(selectedBoardIndex, holes)} />}<BoardMachiningDetails board={element.boards[selectedBoardIndex]} /></> : <p className="empty-copy">Izaberi ploču ili frontu u lijevom 3D prikazu ili u kartici Konstrukcija da pregledaš njene rupe i obrade.</p>}
         <div className="element-macro-summary">{element.macroLinks.length > 0 ? <MacroLinkDetails links={element.macroLinks} element={element} onApplyHoles={onUpdateBoardHoles} /> : <p className="empty-copy">Ovaj element nema povezane Corpus makroe.</p>}</div>
       </section>}
       {editorTab === "production" && <section className="data-section production-overview">
@@ -3060,6 +3186,7 @@ function BoardCreatorDialog({ element, onCreate, onClose }: {
   const template = element.boards.find((board) => board.thickness !== null) ?? element.boards[0];
   const defaultThickness = template?.thickness && template.thickness > 0 ? template.thickness : 18;
   const defaultLength = Math.max((element.width ?? 600) - defaultThickness * 2, defaultThickness);
+  const [partKind, setPartKind] = useState<"board" | "front">("board");
   const [name, setName] = useState("Nova ploča");
   const [x, setX] = useState(String(defaultThickness));
   const [y, setY] = useState(String(Math.max(defaultThickness, ((element.height ?? 720) - defaultThickness) / 2)));
@@ -3076,6 +3203,28 @@ function BoardCreatorDialog({ element, onCreate, onClose }: {
   const [message, setMessage] = useState("");
   useCloseOnEscape(onClose);
 
+  function choosePartKind(kind: "board" | "front") {
+    setPartKind(kind);
+    setMessage("");
+    if (kind === "front") {
+      setName("Nova fronta");
+      setX("2");
+      setY("2");
+      setZ("0");
+      setWidth(String(Math.max((element.width ?? 600) - 4, defaultThickness)));
+      setHeight(String(Math.max((element.height ?? 720) - 4, defaultThickness)));
+      setDirection("1");
+      return;
+    }
+    setName("Nova ploča");
+    setX(String(defaultThickness));
+    setY(String(Math.max(defaultThickness, ((element.height ?? 720) - defaultThickness) / 2)));
+    setZ("0");
+    setWidth(String(Math.max(element.depth ?? 560, defaultThickness)));
+    setHeight(String(defaultLength));
+    setDirection("2");
+  }
+
   function submit() {
     const values = [x, y, z, width, height, thickness].map((value) => Number(value.replace(",", ".")));
     const [parsedX, parsedY, parsedZ, parsedWidth, parsedHeight, parsedThickness] = values;
@@ -3085,17 +3234,18 @@ function BoardCreatorDialog({ element, onCreate, onClose }: {
     const parsedColor = Number.parseInt(color.replace(/^#/, ""), 16);
     if (!/^#[0-9a-f]{6}$/i.test(color) || !Number.isInteger(parsedColor)) return setMessage("Boja mora biti zapisana kao #RRGGBB.");
     onCreate({
-      name: name.trim(), position: [parsedX!, parsedY!, parsedZ!], width: parsedWidth!, height: parsedHeight!, thickness: parsedThickness!,
+      name: name.trim(), frontType: partKind === "front" ? 2 : null, position: [parsedX!, parsedY!, parsedZ!], width: parsedWidth!, height: parsedHeight!, thickness: parsedThickness!,
       direction: Number(direction) as 0 | 1 | 2, materialName, materialUid, color: parsedColor, transparent, visible,
     });
   }
 
   return (
     <div className="library-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="cabinet-dialog board-creator-dialog" role="dialog" aria-modal="true" aria-label="Dodaj novu ploču" onMouseDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">Struktura elementa</p><h2>Dodaj novu ploču</h2></div><button aria-label="Zatvori dodavanje ploče" onClick={onClose}>×</button></header>
-        <p>Dodaje pravougaonu Corpus ploču u izabrani element. Početne vrijednosti su podešene kao polica; sve mjere i orijentaciju možeš promijeniti.</p>
+      <section className="cabinet-dialog board-creator-dialog" role="dialog" aria-modal="true" aria-label="Dodaj novi dio" onMouseDown={(event) => event.stopPropagation()}>
+        <header><div><p className="eyebrow">Struktura elementa</p><h2>Dodaj novi dio</h2></div><button aria-label="Zatvori dodavanje dijela" onClick={onClose}>×</button></header>
+        <p>{partKind === "front" ? "Dodaje pravougaonu Corpus frontu TIPFRONTE 2 u izabrani element. Početne mjere daju naklopnu frontu sa zazorom 2 mm." : "Dodaje pravougaonu Corpus ploču u izabrani element. Početne vrijednosti su podešene kao polica; sve mjere i orijentaciju možeš promijeniti."}</p>
         <div className="cabinet-form">
+          <label><span>Vrsta dijela</span><select aria-label="Vrsta novog dijela" value={partKind} onChange={(event) => choosePartKind(event.target.value as "board" | "front")}><option value="board">Obična ploča</option><option value="front">Fronta</option></select></label>
           <label><span>Naziv</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
           <label><span>Orijentacija</span><select aria-label="Orijentacija nove ploče" value={direction} onChange={(event) => setDirection(event.target.value as "0" | "1" | "2")}><option value="0">0 · bočna</option><option value="1">1 · uspravna</option><option value="2">2 · horizontalna</option></select></label>
           <label><span>Debljina</span><div><input inputMode="decimal" value={thickness} onChange={(event) => setThickness(event.target.value)} /><small>mm</small></div></label>
@@ -3107,11 +3257,11 @@ function BoardCreatorDialog({ element, onCreate, onClose }: {
           <label><span>Materijal</span><input value={materialName} onChange={(event) => setMaterialName(event.target.value)} /></label>
           <label><span>UID materijala</span><input value={materialUid} onChange={(event) => setMaterialUid(event.target.value)} /></label>
           <label><span>Boja</span><input type="color" aria-label="Boja nove ploče" value={color} onChange={(event) => setColor(event.target.value)} /></label>
-          <label className="cabinet-check"><input type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} /><span>Vidljiva ploča</span></label>
-          <label className="cabinet-check"><input type="checkbox" checked={transparent} onChange={(event) => setTransparent(event.target.checked)} /><span>Providna ploča</span></label>
+          <label className="cabinet-check"><input type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} /><span>Vidljiv dio</span></label>
+          <label className="cabinet-check"><input type="checkbox" checked={transparent} onChange={(event) => setTransparent(event.target.checked)} /><span>Providan dio</span></label>
         </div>
         {message && <p className="error-message" role="alert">{message}</p>}
-        <footer><button className="secondary-button" onClick={onClose}>Odustani</button><button className="primary-button" onClick={submit}>Dodaj ploču</button></footer>
+        <footer><button className="secondary-button" onClick={onClose}>Odustani</button><button className="primary-button" onClick={submit}>{partKind === "front" ? "Dodaj frontu" : "Dodaj ploču"}</button></footer>
       </section>
     </div>
   );
@@ -3563,6 +3713,7 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
     if (![plane, angle].every(Number.isFinite)) return setMessage("Ravan i ugao moraju biti brojevi.");
     const previous = selectedHole;
     const hole: CorpusS3dHole = {
+      ...(previous ?? {}),
       groupType: previous?.groupType || "GRUPA14",
       name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
       diameter, depth, plane, angle,
@@ -3592,6 +3743,7 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
     if (![diameter, depth].every((value) => Number.isFinite(value) && value > 0)) return setMessage("Prečnik i dubina moraju biti veći od nule.");
     if (![plane, angle].every(Number.isFinite)) return setMessage("Ravan i ugao moraju biti brojevi.");
     const template: CorpusS3dHole = {
+      ...(selectedHole ?? {}),
       groupType: selectedHole?.groupType || "GRUPA14", name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
       diameter, depth, plane, angle, machiningMode: selectedHole?.machiningMode ?? null, machining: selectedHole ? { ...selectedHole.machining } : {},
     };
@@ -3652,7 +3804,8 @@ function BoardHoleEditor({ board, onUpdate }: { board: CorpusS3dBoard; onUpdate(
 
   return (
     <div className="board-editor hole-editor">
-      <div className="section-title"><h3>Ručno bušenje</h3><span>{board.holes.length} rupa</span></div>
+      <div className="section-title"><h3>Ručno bušenje</h3><span>{board.holes.length} rupa{board.invalidHoleCount ? ` · ${board.invalidHoleCount} neupotrebljivih` : ""}</span></div>
+      {board.invalidHoleCount > 0 && <div className="evidence-warning"><strong>Nepotpun zapis rupe je sačuvan.</strong><span>Nedostaju koordinate, mjere ili dokazana ravan. Ne prikazujemo ga kao proizvodnu geometriju i ne nagađamo vrijednosti.</span></div>}
       <p>Osnovna operacija bez makroa. Položaj prihvata broj ili Corpus izraz, npr. <code>B/2</code> i <code>L/2-32</code>.</p>
       <div className="hole-editor-toolbar">
         <select aria-label="Izabrana rupa" value={selectedIndex ?? "new"} onChange={(event) => event.target.value === "new" ? startNew() : select(Number(event.target.value))}>
@@ -3732,6 +3885,7 @@ function holeFromDraft(draft: ReturnType<typeof holeDraft>, previous: CorpusS3dH
   if (![diameter, depth].every((value) => Number.isFinite(value) && value > 0)) return "Prečnik i dubina moraju biti veći od nule.";
   if (![plane, angle].every(Number.isFinite)) return "Ravan i ugao moraju biti brojevi.";
   return {
+    ...(previous ?? {}),
     groupType: previous?.groupType || "GRUPA14", name: draft.name.trim(), xExpression: draft.xExpression.trim(), yExpression: draft.yExpression.trim(),
     diameter, depth, plane, angle, machiningMode: previous?.machiningMode ?? null, machining: previous ? { ...previous.machining } : {},
   };
@@ -4045,13 +4199,13 @@ type BoardGeometryForm = {
   direction: string; angle: string; xAngle: string; zAngle: string;
 };
 
-function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate, onRename, onMove, onDuplicate, onDuplicateArray, onDuplicateGrid, onDistributeArray, onRemove, canChangeStructure, canRemove }: {
+function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate, onUpdateIdentity, onMove, onDuplicate, onDuplicateArray, onDuplicateGrid, onDistributeArray, onRemove, canChangeStructure, canRemove }: {
   element: CorpusS3dElement;
   board: CorpusS3dBoard;
   boardIndex: number;
   boardCount: number;
   onUpdate(boardIndex: number, patch: BoardGeometryPatch): void;
-  onRename(boardIndex: number, name: string): void;
+  onUpdateIdentity(boardIndex: number, name: string, frontType: 2 | null): void;
   onMove(boardIndex: number, direction: -1 | 1): void;
   onDuplicate(boardIndex: number): void;
   onDuplicateArray(boardIndex: number, count: number, offset: CorpusCopyOffset): void;
@@ -4063,6 +4217,7 @@ function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate,
 }) {
   const [form, setForm] = useState<BoardGeometryForm>(() => boardGeometryFormFor(board));
   const [name, setName] = useState(board.name);
+  const [partKind, setPartKind] = useState<"board" | "front">(board.frontType === 2 ? "front" : "board");
   const [alignmentInset, setAlignmentInset] = useState("0");
   const [arrayCount, setArrayCount] = useState("1");
   const [arrayOffset, setArrayOffset] = useState<[string, string, string]>(["0", "100", "0"]);
@@ -4073,7 +4228,8 @@ function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate,
   const [distributionAxis, setDistributionAxis] = useState<CorpusBoardPlacementAxis>("y");
   const [distributionInset, setDistributionInset] = useState("0");
   const [message, setMessage] = useState("");
-  useEffect(() => { setForm(boardGeometryFormFor(board)); setName(board.name); setMessage(""); }, [board]);
+  const protectedFrontType = board.frontType !== null && board.frontType !== 0 && board.frontType !== 2;
+  useEffect(() => { setForm(boardGeometryFormFor(board)); setName(board.name); setPartKind(board.frontType === 2 ? "front" : "board"); setMessage(""); }, [board]);
   const fields: Array<{ key: keyof BoardGeometryForm; label: string; suffix: string }> = [
     { key: "x", label: "Pozicija X", suffix: "mm" }, { key: "y", label: "Pozicija Y", suffix: "mm" },
     { key: "z", label: "Pozicija Z", suffix: "mm" }, { key: "width", label: "Širina konture", suffix: "mm" },
@@ -4094,10 +4250,12 @@ function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate,
     setMessage("Geometrija ploče je primijenjena u radnoj kopiji.");
   }
 
-  function applyName() {
+  function applyIdentity() {
     if (!name.trim()) return setMessage("Naziv ploče ne može biti prazan.");
-    if (name.trim() === board.name) return setMessage("Naziv ploče nije promijenjen.");
-    onRename(boardIndex, name);
+    const nextFrontType = partKind === "front" ? 2 : null;
+    if (name.trim() === board.name && (protectedFrontType || nextFrontType === board.frontType)) return setMessage("Naziv i vrsta dijela nisu promijenjeni.");
+    onUpdateIdentity(boardIndex, name, nextFrontType);
+    setMessage("Naziv i vrsta dijela su primijenjeni u radnoj kopiji.");
   }
 
   function align(axis: CorpusBoardPlacementAxis, alignment: CorpusBoardPlacementAlignment) {
@@ -4154,9 +4312,9 @@ function BoardGeometryEditor({ element, board, boardIndex, boardCount, onUpdate,
 
   return (
     <div className="board-editor geometry-editor">
-      <div className="section-title"><h3>{board.name || `Ploča ${boardIndex + 1}`}</h3><span>ploča</span></div>
+      <div className="section-title"><h3>{board.name || `Ploča ${boardIndex + 1}`}</h3><span>{corpusBoardPartKind(board.frontType) === "front" ? "fronta" : corpusBoardPartKind(board.frontType) === "auxiliary" ? "pomoćni dio" : corpusBoardPartKind(board.frontType) === "unknown" ? "nepoznat dio" : "ploča"}</span></div>
       <p>Mijenjaju se samo dokazani S3D atributi ploče; kontura, rupe i obrade ostaju sačuvane.</p>
-      {canChangeStructure && <div className="appearance-fields"><label><span>Naziv ploče</span><input value={name} onChange={(event) => setName(event.target.value)} /></label><div className="geometry-actions"><button className="secondary-button" onClick={applyName}>Primijeni naziv</button></div></div>}
+      {canChangeStructure && <div className="appearance-fields"><label><span>Naziv dijela</span><input value={name} onChange={(event) => setName(event.target.value)} /></label><label><span>Vrsta dijela</span><select aria-label="Vrsta izabranog dijela" value={partKind} disabled={protectedFrontType} title={protectedFrontType ? `TIPFRONTE=${board.frontType} ostaje sačuvan; podržano je samo preimenovanje` : undefined} onChange={(event) => setPartKind(event.target.value as "board" | "front")}><option value="board">{protectedFrontType ? `Sačuvaj TIPFRONTE ${board.frontType}` : "Obična ploča"}</option><option value="front">Fronta · TIPFRONTE 2</option></select></label><div className="geometry-actions"><button className="secondary-button" onClick={applyIdentity}>Primijeni naziv i vrstu</button></div></div>}
       <div className="geometry-fields">
         {fields.map((field) => <label key={field.key}><span>{field.label}</span><div><input type="number" step="any" value={form[field.key]} onChange={(event) => setForm((current) => ({ ...current, [field.key]: event.target.value }))} /><small>{field.suffix}</small></div></label>)}
         <label><span>Orijentacija</span><div><select aria-label="Orijentacija ploče" value={form.direction} onChange={(event) => setForm((current) => ({ ...current, direction: event.target.value }))}><option value="0">0 · bočna</option><option value="1">1 · uspravna</option><option value="2">2 · horizontalna</option></select></div></label>
@@ -4222,6 +4380,7 @@ function BoardAppearanceEditor({ board, boardIndex, onUpdate }: {
   boardIndex: number;
   onUpdate(boardIndex: number, patch: BoardAppearancePatch): void;
 }) {
+  const library = useContext(MaterialLibraryContext);
   const [materialName, setMaterialName] = useState(board.materialName);
   const [materialUid, setMaterialUid] = useState(board.materialUid);
   const [color, setColor] = useState(colorToHex(board.color));
@@ -4244,6 +4403,9 @@ function BoardAppearanceEditor({ board, boardIndex, onUpdate }: {
     <div className="appearance-editor">
       <div className="section-title"><h3>Materijal i izgled</h3><span>3D</span></div>
       <div className="appearance-fields">
+        {library && <CatalogMaterialSelect label="Iz kataloga" onSelect={(selected) => {
+          setMaterialName(selected.name); setMaterialUid(selected.uid); setMessage("Kataloški naziv i MUID su pripremljeni. Potvrdi sa „Primijeni izgled“.");
+        }} />}
         <label><span>Naziv materijala</span><input value={materialName} onChange={(event) => setMaterialName(event.target.value)} /></label>
         <label><span>UID materijala</span><input value={materialUid} onChange={(event) => setMaterialUid(event.target.value)} /></label>
         <label><span>Boja</span><div className="color-field"><input type="color" aria-label="Boja ploče" value={color} onChange={(event) => setColor(event.target.value)} /><input aria-label="HEX boja ploče" value={color} onChange={(event) => setColor(event.target.value)} /></div></label>
@@ -4297,7 +4459,7 @@ function Property({ label, value }: { label: string; value: string }) {
 function ElementEditorSidebar({ element, selectedBoardIndex, onSelectBoard, onBack }: { element: CorpusS3dElement; selectedBoardIndex: number | null; onSelectBoard(boardIndex: number | null): void; onBack(): void }) {
   return <aside className="element-editor-sidebar">
     <button className="editor-sidebar-back" onClick={onBack}>← Nazad u prostoriju</button>
-    <div className="editor-sidebar-heading"><p className="eyebrow">Aktivni element</p><h2>{element.name || "Neimenovan element"}</h2><span>{element.code || element.className || "Bez šifre"}</span>{selectedBoardIndex !== null && element.boards[selectedBoardIndex] && <strong>Izabrana ploča: {element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`}</strong>}</div>
+    <div className="editor-sidebar-heading"><p className="eyebrow">Aktivni element</p><h2>{element.name || "Neimenovan element"}</h2><span>{element.code || element.className || "Bez šifre"}</span>{selectedBoardIndex !== null && element.boards[selectedBoardIndex] && <strong>Izabrana {isCorpusFrontType(element.boards[selectedBoardIndex]!.frontType) ? "fronta" : corpusBoardPartKind(element.boards[selectedBoardIndex]!.frontType) === "auxiliary" ? "pomoćni dio" : "ploča"}: {element.boards[selectedBoardIndex]!.name || `Ploča ${selectedBoardIndex + 1}`}</strong>}</div>
     <Suspense fallback={<div className="element-preview-loading">Pripremam 3D element…</div>}><Element3DPreview element={element} selectedBoardIndex={selectedBoardIndex} onSelectBoard={onSelectBoard} /></Suspense>
     <dl className="editor-sidebar-properties">
       <div><dt>Širina</dt><dd>{formatNumber(element.width)} mm</dd></div>
@@ -4351,7 +4513,10 @@ function downloadText(fileName: string, contents: string, type: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = fileName;
+  link.download = corpusSafeDownloadFileName(fileName);
+  link.hidden = true;
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

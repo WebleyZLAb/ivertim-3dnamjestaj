@@ -1,16 +1,18 @@
 {
   "name": "ivertim-corpus",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Samostalni IVERTIM alat za analizu i obradu Corpus S3D projekata",
   "type": "module",
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:integration": "node --experimental-strip-types --test tests/*.integration.ts",
     "audit:s3d": "node --experimental-strip-types scripts/audit-s3d.ts",
     "audit:s3d:machining": "node --experimental-strip-types scripts/audit-s3d-machining.ts",
     "audit:s3d:c6dat": "node --experimental-strip-types scripts/audit-s3d-c6dat.ts",
     "audit:s3d:macros": "node --experimental-strip-types scripts/audit-s3d-macros.ts",
     "audit:s3d:saw": "node --experimental-strip-types scripts/audit-s3d-saw-semantics.ts",
+    "audit:s3d:production": "node --experimental-strip-types scripts/audit-s3d-production.ts",
     "audit:e3d": "node --experimental-strip-types scripts/audit-e3d-library.ts",
     "audit:cmk": "node --experimental-strip-types scripts/audit-cmk-library.ts",
     "audit:cmk:holes": "node --experimental-strip-types scripts/audit-cmk-hole-correlation.ts",
@@ -23,9 +25,16 @@
     "typecheck": "tsc --noEmit",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "check:v1": "pnpm test && pnpm test:integration && pnpm typecheck && pnpm build && pnpm verify:launcher",
+    "preview": "vite preview",
+    "serve:local": "node scripts/serve-corpus.mjs",
+    "start:local": "node scripts/start-corpus.mjs",
+    "verify:launcher": "node scripts/start-corpus.mjs --provjera"
   },
   "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "dependencies": {
     "fast-xml-parser": "^5.11.2",
     "react": "^19.3.1",

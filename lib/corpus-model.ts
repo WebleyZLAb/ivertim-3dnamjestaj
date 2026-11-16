@@ -1,4 +1,4 @@
-import { parseCorpusE3d, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dHole, type CorpusS3dRoom } from "./corpus-s3d.ts";
+import { isCorpusHoleUsable, parseCorpusE3d, withCorpusHoleCompatibilityAttributes, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dHole, type CorpusS3dRoom } from "./corpus-s3d.ts";
 
 export type ElementGeometryPatch = Pick<CorpusS3dElement, "position" | "width" | "height" | "depth" | "angle"> & Partial<Pick<CorpusS3dElement, "xAngle" | "zAngle">>;
 export type ElementIdentityPatch = Pick<CorpusS3dElement, "name" | "code" | "className" | "visible" | "editable" | "locked">;
@@ -152,7 +152,13 @@ export function updateCorpusBoardHoles(
 ): { elements: CorpusS3dElement[]; updatedElement: CorpusS3dElement | null } {
   const board = targetElement.boards[boardIndex];
   if (!board) return { elements: [...elements], updatedElement: null };
-  const updatedBoard = { ...board, holes: holes.map(cloneHole), holeCount: holes.length };
+  const updatedHoles = holes.map((hole) => cloneHole(withCorpusHoleCompatibilityAttributes(hole)));
+  const updatedBoard = {
+    ...board,
+    holes: updatedHoles,
+    holeCount: updatedHoles.length,
+    invalidHoleCount: updatedHoles.filter((hole) => !isCorpusHoleUsable(hole)).length,
+  };
   const result = updateCorpusElementRecord(elements, targetElement, { ...targetElement, boards: targetElement.boards.map((item, index) => index === boardIndex ? updatedBoard : item) });
   return { elements: result.elements, updatedElement: result.updated };
 }
@@ -426,7 +432,12 @@ function isCorpusHole(value: unknown): value is CorpusS3dHole {
 }
 
 function cloneHole(hole: CorpusS3dHole): CorpusS3dHole {
-  return { ...hole, machining: { ...hole.machining } };
+  return {
+    ...hole,
+    machining: { ...hole.machining },
+    ...(hole.unknownAttributes ? { unknownAttributes: { ...hole.unknownAttributes } } : {}),
+    ...(hole.unknownChildTags ? { unknownChildTags: [...hole.unknownChildTags] } : {}),
+  };
 }
 
 function isImportedElementFile(value: unknown): value is CorpusImportedElementFile {

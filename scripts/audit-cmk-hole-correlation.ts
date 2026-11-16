@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { flattenCorpusS3dElements, parseCorpusE3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const query = (process.argv[3] ?? "").toLocaleLowerCase();
@@ -16,7 +17,7 @@ const primaryPayloadSections = new Map<string, number>();
 const secondaryPayloadSections = new Map<string, number>();
 
 for (const file of files) {
-  const inspection = parseCorpusE3d(await readFile(file, "utf8"));
+  const inspection = parseCorpusE3d(decodeCorpusTextDocument(await readFile(file)).text);
   for (const element of flattenCorpusS3dElements(inspection.elements)) {
     const links = element.macroLinks.filter(({ name }) => !query || name.toLocaleLowerCase().includes(query));
     if (!links.length) continue;

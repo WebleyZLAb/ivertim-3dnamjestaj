@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { flattenCorpusS3dElements, parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const sampleLimit = Math.max(0, Number(process.argv[3] ?? 3) || 0);
@@ -15,7 +16,7 @@ let holes = 0;
 
 for (const file of files) {
   try {
-    const xml = await readFile(file, "utf8");
+    const xml = decodeCorpusTextDocument(await readFile(file)).text;
     const extension = path.extname(file).toLowerCase();
     const inspection = extension === ".s3d" ? parseCorpusS3d(xml) : parseCorpusE3d(xml);
     parsed += 1;
@@ -26,7 +27,7 @@ for (const file of files) {
           holes += 1;
           const plane = hole.plane === null ? "null" : String(hole.plane);
           increment(planes, plane);
-          const key = `SMJER=${board.direction ?? "null"} RPL=${plane} RAL=${hole.angle ?? "null"}`;
+          const key = `SMJER=${board.direction ?? "null"} RPL=${plane} RAA=${hole.angle ?? "null"}`;
           increment(combinations, key);
           const list = samples.get(key) ?? [];
           if (list.length < sampleLimit) list.push({

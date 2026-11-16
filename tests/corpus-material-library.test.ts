@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createCorpusMaterialIndex, matchCorpusMaterial, parseCorpusMaterialCatalog,
-  resolveCorpusMaterialPicturePath,
+  resolveCorpusMaterialPicturePath, selectableCorpusMaterials,
 } from "../lib/corpus-material-library.ts";
 
 const source = `VER=12\nMATCOUNT=2\nORDER=4\n<MAT>\nNAZIV=HDF\nMUID=abc\nPICFILE=HDF.jpg\nTEXX=2000\nTEXY=1500\nTEXZ=1000\nTIPMAT=0\nCUSTOM=a=b\n<ENDMAT>\n<MAT>\nNAZIV=W908_ST7\nMUID=def\nPICFILE=decor/W908.jpg\nTEXX=2500\n<ENDMAT>`;
@@ -31,6 +31,13 @@ test("ne bira automatski dvosmislen UID", () => {
   const left = parseCorpusMaterialCatalog(`MATCOUNT=1\n<MAT>\nNAZIV=A\nMUID=same\nPICFILE=a.jpg\n<ENDMAT>`, "a/MatDat.MXC");
   const right = parseCorpusMaterialCatalog(`MATCOUNT=1\n<MAT>\nNAZIV=B\nMUID=same\nPICFILE=b.jpg\n<ENDMAT>`, "b/MatDat.MXC");
   assert.equal(matchCorpusMaterial(createCorpusMaterialIndex([left, right]), "same", "").kind, "uid-ambiguous");
+});
+
+test("nudi samo jednoznačne neprazne MUID materijale", () => {
+  const catalog = parseCorpusMaterialCatalog(`MATCOUNT=4\n<MAT>\nNAZIV=Jedinstven\nMUID=unique\n<ENDMAT>\n<MAT>\nNAZIV=Prvi\nMUID=same\n<ENDMAT>\n<MAT>\nNAZIV=Drugi\nMUID=same\n<ENDMAT>\n<MAT>\nNAZIV=Bez identiteta\nMUID=\n<ENDMAT>`);
+  assert.deepEqual(selectableCorpusMaterials(createCorpusMaterialIndex([catalog])).map(({ name, uid }) => ({ name, uid })), [
+    { name: "Jedinstven", uid: "unique" },
+  ]);
 });
 
 test("sigurno razrješava sliku relativno prema katalogu", () => {

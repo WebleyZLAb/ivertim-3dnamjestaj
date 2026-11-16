@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const files = await findS3dFiles(root);
@@ -8,7 +9,7 @@ const machiningRoots = new Set(["MAK", "MAKLINK", "MILTOOL", "CONMIL", "RAS", "A
 const tags = new Map<string, { count: number; files: Set<string>; attributes: Map<string, Set<string>>; example: string }>();
 
 for (const file of files) {
-  const xml = await readFile(file, "utf8");
+  const xml = decodeCorpusTextDocument(await readFile(file)).text;
   const stack: string[] = [];
   for (const token of scanXmlTags(xml)) {
     if (token.closing) {

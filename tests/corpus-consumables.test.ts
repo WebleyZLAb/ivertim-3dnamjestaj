@@ -27,3 +27,9 @@ test("izvozi potrošni materijal kao UTF-8 CSV", () => {
   assert.match(csv, /KONFIRMAT;CONF/);
   assert.match(csv, /1mm;;K007/);
 });
+
+test("CSV ne dopušta Excel formulu iz naziva potrošnog materijala", () => {
+  const injected = xml.replace('NAZIV="KONFIRMAT"', 'NAZIV="+CMD|test"');
+  const csv = corpusConsumablesCsv(buildCorpusConsumablesList(parseCorpusS3d(injected).elements));
+  assert.match(csv, /'\+CMD\|test/);
+});

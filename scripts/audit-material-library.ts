@@ -5,6 +5,7 @@ import {
   resolveCorpusMaterialPicturePath,
 } from "../lib/corpus-material-library.ts";
 import { flattenCorpusS3dElements, parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const documentRoot = path.resolve(process.argv[2] ?? ".");
 const textureRoot = path.resolve(process.argv[3] ?? ".");
@@ -13,7 +14,7 @@ const catalogs = [];
 const catalogFailures: Array<{ file: string; error: string }> = [];
 for (const file of catalogFiles) {
   try {
-    catalogs.push(parseCorpusMaterialCatalog(await readFile(file, "utf8"), slash(path.relative(textureRoot, file))));
+    catalogs.push(parseCorpusMaterialCatalog(decodeCorpusTextDocument(await readFile(file)).text, slash(path.relative(textureRoot, file))));
   } catch (reason) {
     catalogFailures.push({ file: path.relative(textureRoot, file), error: reason instanceof Error ? reason.message : String(reason) });
   }
@@ -27,7 +28,7 @@ const documentFailures: Array<{ file: string; error: string }> = [];
 let boards = 0;
 for (const file of documentFiles) {
   try {
-    const xml = await readFile(file, "utf8");
+    const xml = decodeCorpusTextDocument(await readFile(file)).text;
     const inspection = file.toLowerCase().endsWith(".e3d") ? parseCorpusE3d(xml) : parseCorpusS3d(xml);
     for (const element of flattenCorpusS3dElements(inspection.elements)) for (const board of element.boards) {
       boards += 1;

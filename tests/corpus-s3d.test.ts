@@ -125,6 +125,7 @@ test("čita elemente, varijable, daske, materijale, rubove i rupe", () => {
   assert.equal(board.transparent, false);
   assert.equal(board.visible, true);
   assert.equal(board.holeCount, 2);
+  assert.equal(board.invalidHoleCount, 0);
   assert.deepEqual(board.holes, [
     { groupType: "GRUPA14", name: "KIRNER VIJKA", xExpression: "B/2-16", yExpression: "L/2+16", diameter: 5, depth: 5, plane: 1, angle: 90, machiningMode: 4, machining: { MILTOOL: "103", VIS: "100", THRO: "false" } },
     { groupType: "GRUPA14", name: "CENTRALNI VIJAK", xExpression: "B/2", yExpression: "L/2", diameter: 10, depth: 15, plane: 1, angle: 0, machiningMode: null, machining: {} },
@@ -148,6 +149,19 @@ test("čita elemente, varijable, daske, materijale, rubove i rupe", () => {
       sides: [true, false, true, false],
     },
   ]);
+});
+
+test("čuva nepotpun zapis rupe i označava ga kao proizvodno neupotrebljiv", () => {
+  const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="P"><DASKE><AD DNAME="Radna ploha" VISINA="1000" DUBINA="600" DEBLJINA="38" SMJER="2"><RUPE><GRUPA14/></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
+  const board = parseCorpusS3d(xml).elements[0]?.boards[0];
+
+  assert.ok(board);
+  assert.equal(board.holeCount, 1);
+  assert.equal(board.invalidHoleCount, 1);
+  assert.deepEqual(board.holes[0], {
+    groupType: "GRUPA14", name: "", xExpression: "", yExpression: "", diameter: null,
+    depth: null, plane: null, angle: null, machiningMode: null, machining: {},
+  });
 });
 
 test("čuva hijerarhiju pod-elemenata i daje stabilan ravni pregled", () => {

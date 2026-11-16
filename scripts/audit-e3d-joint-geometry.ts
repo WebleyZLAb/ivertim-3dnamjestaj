@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { analyzeCorpusBoardContact } from "../lib/corpus-board-contact.ts";
 import { flattenCorpusS3dElements, parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const sampleLimit = Math.max(0, Number(process.argv[3] ?? 30) || 0);
@@ -22,7 +23,7 @@ let invalidObjectReferences = 0;
 for (const file of files) {
   try {
     const extension = path.extname(file).toLocaleLowerCase();
-    const xml = await readFile(file, "utf8");
+    const xml = decodeCorpusTextDocument(await readFile(file)).text;
     const inspection = extension === ".s3d" ? parseCorpusS3d(xml) : parseCorpusE3d(xml);
     formats.set(extension, (formats.get(extension) ?? 0) + 1);
     parsed += 1;

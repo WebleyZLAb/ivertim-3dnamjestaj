@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables } from "../lib/corpus-model.ts";
 import { parseCorpusE3d, parseCorpusS3d } from "../lib/corpus-s3d.ts";
-import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dGeometryCopy, writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
+import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dBoardIdentity, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dGeometryCopy, writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
 
 test("upisuje E3D radnu kopiju i čuva nepoznate podatke", () => {
   const xml = `\uFEFF<!-- Ver=17-->\r\n<ELEMENTFILE FILE="D1V" VER="17"><ELEMENT ENAME="D1V" EXPOX="0" EYPOS="0" EZPOS="0" ESIRINA="600" EVISINA="820" EDUBINA="560" EKUT="0" CUSTOM="ostaje"><DASKE><AD DNAME="Bok" DXPOS="0" DYPOS="0" DZPOS="0" DUBINA="560" VISINA="720" DEBLJINA="18" SMJER="0"/></DASKE></ELEMENT></ELEMENTFILE>`;
@@ -181,7 +181,7 @@ test("strukturni EVAR editor odbija dvosmislena i semantički duplirana imena", 
 });
 
 test("upisuje ručno dodane i izmijenjene rupe u S3D kopiju", () => {
-  const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica"><RUPE><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RAL="90"><RAS MODE="4"><MILTOOL>103</MILTOOL></RAS></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
+  const xml = `<PROJECTFILE VER="17"><ELEMENT ENAME="A"><DASKE><AD DNAME="Polica"><RUPE><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RAA="90"><RAS MODE="4"><MILTOOL>103</MILTOOL></RAS></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
   const original = parseCorpusS3d(xml);
   const first = original.elements[0]!.boards[0]!.holes[0]!;
   const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [
@@ -194,6 +194,46 @@ test("upisuje ručno dodane i izmijenjene rupe u S3D kopiju", () => {
   assert.equal(holes[0]!.name, "Centar");
   assert.equal(holes[0]!.machining.MILTOOL, "103");
   assert.equal(holes[1]!.diameter, 8);
+  assert.deepEqual(holes[1]!.unknownAttributes, { RCR: "0", RTLTR: "0", RZA: "0" });
+});
+
+test("čuva nepoznate atribute nepotpune rupe kada se druga rupa mijenja", () => {
+  const xml = `<PROJECTFILE><ELEMENT><DASKE><AD><RUPE><GRUPA14 CUSTOM="ostaje"/><GRUPA14 RNA="Stara" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1"/></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
+  const original = parseCorpusS3d(xml);
+  const board = original.elements[0]!.boards[0]!;
+  const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [
+    board.holes[0]!,
+    { ...board.holes[1]!, name: "Nova" },
+  ]);
+  const output = writeCorpusS3dGeometryCopy(xml, original.elements, changed.elements);
+
+  assert.match(output, /<GRUPA14 CUSTOM="ostaje"\/>/);
+  assert.equal(parseCorpusS3d(output).elements[0]?.boards[0]?.holes[1]?.name, "Nova");
+});
+
+test("ne pretvara whitespace RAS sadržaja u nevažeći XML tag", () => {
+  const xml = `<PROJECTFILE><ELEMENT><DASKE><AD><RUPE><GRUPA14 RNA="R" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1" RCR="0" RTLTR="0" RZA="0"><RAS MODE="1">
+    <CONMIL>0</CONMIL>
+    <MILTOOL>0</MILTOOL>
+  </RAS></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
+  const original = parseCorpusS3d(xml);
+  const board = original.elements[0]!.boards[0]!;
+  const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [{ ...board.holes[0]!, name: "Nova" }]);
+  const output = writeCorpusS3dGeometryCopy(xml, original.elements, changed.elements);
+
+  assert.doesNotMatch(output, /<#text>/);
+  assert.match(output, /RCR="0" RTLTR="0" RZA="0"/);
+  assert.equal(parseCorpusS3d(output).elements[0]?.boards[0]?.holes[0]?.machining.CONMIL, "0");
+});
+
+test("odbija prepisivanje rupe sa nepoznatom ugniježđenom strukturom", () => {
+  const xml = `<PROJECTFILE><ELEMENT><DASKE><AD><RUPE><GRUPA14 RNA="R" RXP="10" RYP="20" RFI="5" RDU="8" RPL="1"><NEPOZNATA_OBRADA X="1"/></GRUPA14></RUPE></AD></DASKE></ELEMENT></PROJECTFILE>`;
+  const original = parseCorpusS3d(xml);
+  const hole = original.elements[0]!.boards[0]!.holes[0]!;
+  const changed = updateCorpusBoardHoles(original.elements, original.elements[0]!, 0, [{ ...hole, name: "Promjena" }]);
+
+  assert.deepEqual(hole.unknownChildTags, ["NEPOZNATA_OBRADA"]);
+  assert.throws(() => writeCorpusS3dGeometryCopy(xml, original.elements, changed.elements), /nepoznatu strukturu/);
 });
 
 test("izdvaja izvorni korijenski S3D element kao samostalni E3D bez gubitka sadržaja", () => {
@@ -326,6 +366,24 @@ test("dodaje novu pravougaonu E3D ploču sa potpunom geometrijom i izgledom", ()
   assert.equal(board?.curvePoints.length, 4);
   assert.equal(board?.materialName, `Hrast "natur"`);
   assert.match(output, /DCOUNT="2"/);
+  assert.doesNotMatch(output, /TIPDASKE|TIPFRONTE/);
+});
+
+test("dodaje dokazanu Corpus frontu bez nagađanja drugih TIPFRONTE režima", () => {
+  const xml = `<ELEMENTFILE><ELEMENT ENAME="A"><DASKE DCOUNT="1"><AD DNAME="Bok"/></DASKE></ELEMENT></ELEMENTFILE>`;
+  const spec = {
+    name: "Nova fronta", frontType: 2 as const, position: [2, 2, 0] as const, height: 716, width: 596, thickness: 18, direction: 1 as const,
+    materialName: "Bijela", materialUid: "BIJELA-1", color: 0xffffff, transparent: false, visible: true,
+  };
+  const output = appendCorpusE3dBoard(xml, spec);
+  const front = parseCorpusE3d(output).elements[0]?.boards[1];
+
+  assert.equal(front?.name, "Nova fronta");
+  assert.equal(front?.boardType, 1);
+  assert.equal(front?.frontType, 2);
+  assert.equal(front?.direction, 1);
+  assert.match(output, /TIPDASKE="1" TIPFRONTE="2"/);
+  assert.throws(() => appendCorpusE3dBoard(xml, { ...spec, frontType: 3 as never }), /samo dokazana Corpus fronta/);
 });
 
 test("dodaje prvu ploču i u samostalnu DASKE sekciju", () => {
@@ -356,6 +414,38 @@ test("mijenja samo naziv izabrane E3D ploče", () => {
   assert.match(output, /CUSTOM="ostaje"/);
   assert.match(output, /<NEPOZNATO X="1"\/>/);
   assert.throws(() => renameCorpusE3dBoard(xml, 0, "   "), /ne može biti prazan/);
+});
+
+test("preimenovanje čuva nestandardni TIPFRONTE, a promjena vrste ga odbija", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Nogica" TIPDASKE="0" TIPFRONTE="5" CUSTOM="ostaje"/></DASKE></ELEMENT></ELEMENTFILE>`;
+  const renamed = renameCorpusE3dBoard(xml, 0, "Preimenovana nogica");
+
+  assert.match(renamed, /DNAME="Preimenovana nogica"/);
+  assert.match(renamed, /TIPDASKE="0"/);
+  assert.match(renamed, /TIPFRONTE="5"/);
+  assert.match(renamed, /CUSTOM="ostaje"/);
+  assert.throws(() => replaceCorpusE3dBoardIdentity(xml, 0, "Fronta", 2), /TIPFRONTE=5 nije podržan/);
+  assert.throws(() => replaceCorpusE3dBoardIdentity(xml, 0, "Ploča", null), /TIPFRONTE=5 nije podržan/);
+});
+
+test("pretvara E3D ploču u dokazanu frontu i vraća je bez gubitka sadržaja", () => {
+  const xml = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Ploča" CUSTOM="ostaje"><RUPE><GRUPA14 RNA="R1"/></RUPE><NEPOZNATO X="1"/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+  const asFront = replaceCorpusE3dBoardIdentity(xml, 0, "Fronta", 2);
+  const parsedFront = parseCorpusE3d(asFront).elements[0]?.boards[0];
+  assert.equal(parsedFront?.name, "Fronta");
+  assert.equal(parsedFront?.boardType, 1);
+  assert.equal(parsedFront?.frontType, 2);
+  assert.match(asFront, /CUSTOM="ostaje"/);
+  assert.match(asFront, /<GRUPA14 RNA="R1"\/>/);
+  assert.match(asFront, /<NEPOZNATO X="1"\/>/);
+
+  const asBoard = replaceCorpusE3dBoardIdentity(asFront, 0, "Opet ploča", null);
+  const parsedBoard = parseCorpusE3d(asBoard).elements[0]?.boards[0];
+  assert.equal(parsedBoard?.name, "Opet ploča");
+  assert.equal(parsedBoard?.frontType, null);
+  assert.doesNotMatch(asBoard, /TIPDASKE|TIPFRONTE/);
+  assert.match(asBoard, /CUSTOM="ostaje"/);
+  assert.throws(() => replaceCorpusE3dBoardIdentity(xml, 0, "Loša", 3 as never), /samo dokazana Corpus fronta/);
 });
 
 test("zamjenjuje ravnu konturu ploče i čuva ostale Corpus blokove", () => {
