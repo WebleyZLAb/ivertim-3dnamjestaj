@@ -52,6 +52,7 @@ textarea:focus-visible,
 .brand > div { display: flex; flex-direction: column; line-height: 1; }
 .brand strong { font-size: 18px; letter-spacing: .12em; }
 .brand > div span { margin-top: 4px; color: #7d858c; font-size: 10px; font-weight: 800; letter-spacing: .3em; }
+.brand > div span small { font-size: .56rem; font-weight: 700; letter-spacing: .08em; opacity: .62; vertical-align: .08em; }
 .brand-mark { width: 38px; height: 38px; position: relative; display: inline-block; transform: rotate(-8deg); }
 .brand-mark i { position: absolute; left: 4px; width: 29px; height: 8px; border-radius: 2px; background: var(--dark); transform: skewX(-28deg); }
 .brand-mark i:nth-child(1) { top: 4px; background: var(--accent); }
@@ -610,7 +611,7 @@ textarea:focus-visible,
 .appearance-editor { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .appearance-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .appearance-fields > label { display: flex; flex-direction: column; gap: 5px; color: #697069; font-size: 9px; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
-.appearance-fields > label > input, .color-field { min-width: 0; padding: 9px 10px; border: 1px solid #dfe3dc; border-radius: 8px; background: white; font-size: 12px; text-transform: none; }
+.appearance-fields > label > input, .appearance-fields > label > select, .color-field { min-width: 0; padding: 9px 10px; border: 1px solid #dfe3dc; border-radius: 8px; background: white; font-size: 12px; text-transform: none; }
 .color-field { display: flex; align-items: center; gap: 8px; padding: 5px 8px; }
 .color-field input[type="color"] { width: 30px; height: 26px; padding: 0; border: 0; background: transparent; }
 .color-field input:last-child { min-width: 0; flex: 1; border: 0; outline: 0; font-family: monospace; }
@@ -705,6 +706,12 @@ textarea:focus-visible,
 .room-distribution-fields { grid-template-columns: minmax(210px, 1fr) repeat(2, 104px); }
 .room-distribution-fields label > div { width: 104px; }
 .room-distribution-fields input { width: 68px; flex: 0 0 68px; padding-inline: 7px 2px; text-align: right; font-variant-numeric: tabular-nums; }
+.room-starter { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px; color: #28300c; background: linear-gradient(120deg, #f4f8dc, #fbfcf5); border: 1px solid #dbe5a5; border-radius: 14px; }
+.room-starter > div:first-child { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.room-starter > div:first-child > span { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; color: #364000; background: var(--accent); border-radius: 10px; font-size: 11px; font-weight: 900; }
+.room-starter strong { display: block; font-size: 13px; }
+.room-starter p { margin: 4px 0 0; color: #6d7554; font-size: 11px; line-height: 1.45; }
+.room-starter-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 .group-move-fields, .group-position-fields, .group-copy-fields { grid-template-columns: repeat(3, 104px) auto; }
 .board-group-fields { grid-template-columns: repeat(3, 104px) auto auto; }
 
@@ -716,6 +723,8 @@ textarea:focus-visible,
   .room-settings-values { width: 100%; justify-items: start; padding-left: 42px; }
   .room-distribution-fields { grid-template-columns: repeat(2, 104px); }
   .room-distribution-fields > label:first-child { grid-column: 1 / -1; }
+  .room-starter { align-items: stretch; flex-direction: column; }
+  .room-starter-actions { flex-wrap: wrap; }
 }
 .two-column-section { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
 .material-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 12px; }

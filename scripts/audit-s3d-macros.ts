@@ -4,6 +4,7 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { analyzeCorpusMacroPayload, decodeCorpusText } from "../lib/corpus-macro.ts";
 import { flattenCorpusS3dElements, parseCorpusS3d } from "../lib/corpus-s3d.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const files = await findS3dFiles(root);
@@ -18,7 +19,7 @@ let assignments = 0;
 let supportedAssignments = 0;
 
 for (const file of files) {
-  const project = parseCorpusS3d(await readFile(file, "utf8"));
+  const project = parseCorpusS3d(decodeCorpusTextDocument(await readFile(file)).text);
   for (const element of flattenCorpusS3dElements(project.elements)) {
     for (const link of element.macroLinks) {
       macroLinks += 1;

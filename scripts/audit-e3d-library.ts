@@ -3,6 +3,7 @@ import path from "node:path";
 import { flattenCorpusS3dElements, parseCorpusE3d } from "../lib/corpus-s3d.ts";
 import { updateCorpusElement } from "../lib/corpus-model.ts";
 import { writeCorpusE3dGeometryCopy } from "../lib/corpus-s3d-writer.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const files = await findFiles(root, ".e3d");
@@ -22,7 +23,7 @@ let geometryWritesVerified = 0;
 
 for (const file of files) {
   try {
-    const xml = await readFile(file, "utf8");
+    const xml = decodeCorpusTextDocument(await readFile(file)).text;
     const inspection = parseCorpusE3d(xml);
     parsed += 1;
     versions.set(inspection.version || "(bez verzije)", (versions.get(inspection.version || "(bez verzije)") ?? 0) + 1);

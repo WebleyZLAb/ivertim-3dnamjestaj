@@ -56,6 +56,7 @@ export interface CorpusS3dBoard {
   curvePoints: readonly CorpusS3dCurvePoint[];
   curveIsApproximate: boolean;
   holeCount: number;
+  invalidHoleCount: number;
   holes: readonly CorpusS3dHole[];
   consumables: readonly CorpusS3dConsumable[];
   unknownChildTags: readonly string[];
@@ -85,6 +86,22 @@ export interface CorpusS3dHole {
   angle: number | null;
   machiningMode: number | null;
   machining: Readonly<Record<string, string>>;
+  unknownAttributes?: Readonly<Record<string, string>>;
+  unknownChildTags?: readonly string[];
+}
+
+export type CorpusBoardPartKind = "board" | "front" | "auxiliary" | "unknown";
+
+/** Klasifikacija dokazana raspodjelom 6.033 ploče iz stvarnih S3D projekata. */
+export function corpusBoardPartKind(frontType: number | null): CorpusBoardPartKind {
+  if (frontType === null || frontType === 0) return "board";
+  if ([1, 2, 3, 4, 6].includes(frontType)) return "front";
+  if (frontType === 5) return "auxiliary";
+  return "unknown";
+}
+
+export function isCorpusFrontType(frontType: number | null): boolean {
+  return corpusBoardPartKind(frontType) === "front";
 }
 
 export interface CorpusS3dElement {
@@ -341,6 +358,7 @@ function parseBoard(board: XmlRecord): CorpusS3dBoard {
     curvePoints,
     curveIsApproximate: curvePoints.some((point) => point.style !== 0),
     holeCount: holes.length,
+    invalidHoleCount: holes.filter((hole) => !isCorpusHoleUsable(hole)).length,
     holes,
     consumables: asArray(consumablesContainer.POTITEM).map((value) => parseConsumable(asRecord(value))),
     unknownChildTags: tags.filter((tag) => !KNOWN_BOARD_CHILD_TAGS.has(tag)),
@@ -395,6 +413,10 @@ function parseHoles(container: XmlRecord): CorpusS3dHole[] {
     for (const [sourceIndex, entry] of asArray(value).entries()) {
       const hole = asRecord(entry);
       const machining = asRecord(hole.RAS);
+      const unknownAttributes = Object.fromEntries(Object.entries(hole)
+        .filter(([key, raw]) => key.startsWith("@_") && !KNOWN_HOLE_ATTRIBUTES.has(key) && typeof raw !== "object")
+        .map(([key, raw]) => [key.slice(2), text(raw)]));
+      const unknownChildTags = Object.keys(hole).filter((key) => !key.startsWith("@_") && key !== "RAS" && key !== "#text");
       holes.push({
         sourceIndex,
         groupType,
@@ -407,12 +429,40 @@ function parseHoles(container: XmlRecord): CorpusS3dHole[] {
         angle: numeric(hole["@_RAA"]),
         machiningMode: numeric(machining["@_MODE"]),
         machining: Object.fromEntries(Object.entries(machining)
-          .filter(([key, raw]) => !key.startsWith("@_") && typeof raw !== "object")
+          .filter(([key, raw]) => key !== "#text" && !key.startsWith("@_") && typeof raw !== "object")
           .map(([key, raw]) => [key, text(raw)])),
+        ...(Object.keys(unknownAttributes).length ? { unknownAttributes } : {}),
+        ...(unknownChildTags.length ? { unknownChildTags } : {}),
       });
     }
   }
   return holes;
+}
+
+const KNOWN_HOLE_ATTRIBUTES = new Set(["@_RNA", "@_RXP", "@_RYP", "@_RFI", "@_RDU", "@_RPL", "@_RAA"]);
+
+/** Čuva nepotpun zapis, ali ga ne predstavlja kao dokazanu proizvodnu rupu. */
+export function isCorpusHoleUsable(hole: CorpusS3dHole): boolean {
+  return hole.xExpression.trim().length > 0
+    && hole.yExpression.trim().length > 0
+    && typeof hole.diameter === "number"
+    && Number.isFinite(hole.diameter)
+    && hole.diameter > 0
+    && typeof hole.depth === "number"
+    && Number.isFinite(hole.depth)
+    && hole.depth >= 0
+    && (hole.plane === 0 || hole.plane === 1);
+}
+
+/** Dokazani minimum prisutan na svih 1.648 valjanih rupa u stvarnom kontrolnom skupu. */
+export const CORPUS_HOLE_COMPATIBILITY_ATTRIBUTES = Object.freeze({ RCR: "0", RTLTR: "0", RZA: "0" });
+
+export function withCorpusHoleCompatibilityAttributes(hole: CorpusS3dHole): CorpusS3dHole {
+  if (!isCorpusHoleUsable(hole)) return hole;
+  return {
+    ...hole,
+    unknownAttributes: { ...CORPUS_HOLE_COMPATIBILITY_ATTRIBUTES, ...hole.unknownAttributes },
+  };
 }
 
 function parseConsumable(item: XmlRecord): CorpusS3dConsumable {

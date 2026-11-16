@@ -1,3 +1,5 @@
+import { corpusSafeFileStem } from "./corpus-file-name.ts";
+
 export type CorpusCabinetSpec = {
   name: string;
   code: string;
@@ -127,7 +129,7 @@ export function generateCorpusCabinetE3d(spec: CorpusCabinetSpec): CorpusGenerat
 
   const safeName = spec.name.trim();
   const safeCode = spec.code.trim();
-  const fileStem = (safeCode || safeName || "IVERTIM-KORPUS").replace(/[<>:"/\\|?*\x00-\x1f]/g, "-").replace(/\s+/g, "-");
+  const fileStem = corpusSafeFileStem(safeCode || safeName, "IVERTIM-KORPUS");
   const sourceXml = `<?xml version="1.0" encoding="UTF-8"?>\n<ELEMENTFILE FILE="${escapeXml(fileStem)}.E3D" VER="17">\n  <ELEMENT ECLAS="TElement" ENAME="${escapeXml(safeName)}" ESIFRA="${escapeXml(safeCode)}" EXPOX="0" EYPOS="0" EZPOS="${format(spec.depth)}" EVISINA="${format(spec.height)}" ESIRINA="${format(spec.width)}" EDUBINA="${format(spec.depth)}" EKUT="0" EXKUT="0" EZKUT="0" EVISIBLE="true" EEDITABLE="true" ELOCKED="false">\n    <DASKE DCOUNT="${boards.length}">\n${boards.map((entry) => `      ${entry}`).join("\n")}\n    </DASKE>\n  </ELEMENT>\n</ELEMENTFILE>`;
   return { fileName: `${fileStem}.E3D`, sourceXml };
 }

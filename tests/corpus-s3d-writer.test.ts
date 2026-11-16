@@ -450,7 +450,7 @@ test("nove rupe svih sest ploha koriste RAA i prezive E3D ponovno ucitavanje", (
   const output = writeCorpusE3dGeometryCopy(xml, original.elements, changed.elements);
   assert.match(output, /RAA="75"/); assert.doesNotMatch(output, /RAL=/); assert.match(output, /RUPE CUSTOM="keep"/);
   const actual = parseCorpusE3d(output).elements[0]!.boards[0]!.holes;
-  assert.deepEqual(actual.map(({sourceIndex,...hole}) => hole), holes);
+  assert.deepEqual(actual.map(({sourceIndex,unknownAttributes,...hole}) => hole), holes);
 });
 
 

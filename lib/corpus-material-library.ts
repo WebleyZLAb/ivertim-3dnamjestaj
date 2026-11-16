@@ -93,6 +93,14 @@ export function createCorpusMaterialIndex(catalogs: readonly CorpusMaterialCatal
   return { byUid, byName };
 }
 
+/** Materijali koje korisnik smije izabrati bez nagađanja identiteta. */
+export function selectableCorpusMaterials(index: CorpusMaterialIndex): readonly CorpusMaterialRecord[] {
+  return [...index.byUid.entries()]
+    .filter(([uid, records]) => Boolean(uid) && records.length === 1)
+    .map(([, records]) => records[0]!)
+    .sort((left, right) => left.name.localeCompare(right.name, "hr") || left.uid.localeCompare(right.uid, "en"));
+}
+
 export function matchCorpusMaterial(index: CorpusMaterialIndex, uid: string, name: string): CorpusMaterialMatch {
   const uidCandidates = index.byUid.get(normalizeIdentity(uid)) ?? [];
   if (uidCandidates.length === 1) return { kind: "uid", record: uidCandidates[0]! };

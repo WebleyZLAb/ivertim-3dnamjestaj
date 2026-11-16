@@ -1,8 +1,10 @@
-import type { CorpusS3dElement } from "./corpus-s3d.ts";
+import { corpusBoardPartKind, isCorpusFrontType, type CorpusS3dBoard, type CorpusS3dElement } from "./corpus-s3d.ts";
+import { corpusCsvCell, corpusCsvText } from "./corpus-csv.ts";
 
 export type CorpusCutListItem = {
   materialName: string;
   materialUid: string;
+  frontType?: number | null;
   height: number;
   width: number;
   thickness: number;
@@ -15,15 +17,46 @@ export type CorpusCutListItem = {
 export type CorpusCutListResult = {
   items: CorpusCutListItem[];
   skippedBoards: number;
+  skippedReasons?: Readonly<Record<string, number>>;
   totalBoards: number;
   excludedHiddenBoards: number;
+  totalFronts?: number;
 };
+
+export type CorpusCutListPartCounts = {
+  board: number;
+  front: number;
+  auxiliary: number;
+  unknown: number;
+};
+
+type CorpusCutListBoard = CorpusS3dBoard & { height: number; width: number; thickness: number };
+
+export function corpusCutListSkipReason(board: CorpusS3dBoard): string | null {
+  const invalidMeasures = [
+    ["VISINA", board.height],
+    ["DUBINA", board.width],
+    ["DEBLJINA", board.thickness],
+  ].filter((entry): entry is [string, number | null] => {
+    const value = entry[1];
+    return typeof value !== "number" || !Number.isFinite(value) || value <= 0;
+  });
+  return invalidMeasures.length
+    ? invalidMeasures.map(([name, value]) => `${name}=${String(value)}`).join(", ")
+    : null;
+}
+
+function isCorpusCutListBoard(board: CorpusS3dBoard): board is CorpusCutListBoard {
+  return corpusCutListSkipReason(board) === null;
+}
 
 export function buildCorpusCutList(elements: readonly CorpusS3dElement[], options: { includeHidden?: boolean } = {}): CorpusCutListResult {
   const groups = new Map<string, Omit<CorpusCutListItem, "parts"> & { parts: Set<string> }>();
+  const skippedReasons: Record<string, number> = {};
   let skippedBoards = 0;
   let totalBoards = 0;
   let excludedHiddenBoards = 0;
+  let totalFronts = 0;
 
   const visit = (items: readonly CorpusS3dElement[], parentPath: string, parentHidden = false) => {
     items.forEach((element, elementIndex) => {
@@ -34,17 +67,18 @@ export function buildCorpusCutList(elements: readonly CorpusS3dElement[], option
         totalBoards += 1;
         const boardHidden = hidden || board.visible === false;
         if (boardHidden && !options.includeHidden) { excludedHiddenBoards += 1; return; }
-        if (board.height === null || board.width === null || board.thickness === null
-          || !Number.isFinite(board.height) || !Number.isFinite(board.width) || !Number.isFinite(board.thickness)
-          || board.height <= 0 || board.width <= 0 || board.thickness <= 0) {
+        if (isCorpusFrontType(board.frontType)) totalFronts += 1;
+        const skipReason = corpusCutListSkipReason(board);
+        if (!isCorpusCutListBoard(board)) {
           skippedBoards += 1;
+          skippedReasons[skipReason ?? "NEPOZNAT RAZLOG"] = (skippedReasons[skipReason ?? "NEPOZNAT RAZLOG"] ?? 0) + 1;
           return;
         }
         const materialName = board.materialName || "Materijal nije naveden";
         const materialUid = board.materialUid || "";
-        const key = JSON.stringify([materialUid, materialName, board.height, board.width, board.thickness]);
+        const key = JSON.stringify([materialUid, materialName, board.frontType, board.height, board.width, board.thickness]);
         const existing = groups.get(key) ?? {
-          materialName, materialUid, height: board.height, width: board.width, thickness: board.thickness,
+          materialName, materialUid, frontType: board.frontType, height: board.height, width: board.width, thickness: board.thickness,
           quantity: 0, holeCount: 0, hiddenCount: 0, parts: new Set<string>(),
         };
         existing.quantity += 1;
@@ -62,7 +96,13 @@ export function buildCorpusCutList(elements: readonly CorpusS3dElement[], option
     .map((item) => ({ ...item, parts: [...item.parts].sort((left, right) => left.localeCompare(right, "hr")) }))
     .sort((left, right) => left.materialName.localeCompare(right.materialName, "hr")
       || right.thickness - left.thickness || right.height - left.height || right.width - left.width);
-  return { items, skippedBoards, totalBoards, excludedHiddenBoards };
+  return { items, skippedBoards, skippedReasons, totalBoards, excludedHiddenBoards, totalFronts };
+}
+
+export function corpusCutListPartCounts(result: CorpusCutListResult): CorpusCutListPartCounts {
+  const counts: CorpusCutListPartCounts = { board: 0, front: 0, auxiliary: 0, unknown: 0 };
+  for (const item of result.items) counts[corpusBoardPartKind(item.frontType ?? null)] += item.quantity;
+  return counts;
 }
 
 export type CorpusCutListCsvOptions = {
@@ -76,18 +116,25 @@ export function corpusCutListCsv(result: CorpusCutListResult, options: CorpusCut
   const delimiter = options.delimiter ?? ";";
   const decimalSeparator = options.decimalSeparator ?? ",";
   const number = (value: number) => String(value).replace(".", decimalSeparator);
+  const includePartIdentity = Object.keys(options).length === 0;
   const rows = [
-    ["Materijal", "UID materijala", "VISINA mm", "DUBINA mm", "Debljina mm", "Količina", "Rupe", "Skrivene", "Elementi i ploče"],
+    includePartIdentity
+      ? ["Vrsta dijela", "TIPFRONTE", "Materijal", "UID materijala", "VISINA mm", "DUBINA mm", "Debljina mm", "Količina", "Rupe", "Skrivene", "Elementi i dijelovi"]
+      : ["Materijal", "UID materijala", "VISINA mm", "DUBINA mm", "Debljina mm", "Količina", "Rupe", "Skrivene", "Elementi i ploče"],
     ...result.items.map((item) => [
-      item.materialName,
-      item.materialUid,
+      ...(includePartIdentity ? [
+      corpusBoardPartKind(item.frontType ?? null) === "front" ? "Fronta" : corpusBoardPartKind(item.frontType ?? null) === "auxiliary" ? "Pomoćni dio" : corpusBoardPartKind(item.frontType ?? null) === "unknown" ? "Nepoznat dio" : "Ploča",
+      item.frontType === null || item.frontType === 0 ? "" : String(item.frontType),
+      ] : []),
+      corpusCsvText(item.materialName),
+      corpusCsvText(item.materialUid),
       number(item.height),
       number(item.width),
       number(item.thickness),
       String(item.quantity),
       String(item.holeCount),
       String(item.hiddenCount),
-      item.parts.join(" | "),
+      corpusCsvText(item.parts.join(" | ")),
     ]),
   ];
   const exportedRows = options.includeHeader === false ? rows.slice(1) : rows;

@@ -1,4 +1,5 @@
 import type { CorpusS3dConsumable, CorpusS3dElement } from "./corpus-s3d.ts";
+import { corpusCsvCell, corpusCsvText } from "./corpus-csv.ts";
 
 export type CorpusConsumableItem = {
   type: string;
@@ -62,18 +63,14 @@ export function corpusConsumablesCsv(items: readonly CorpusConsumableItem[]): st
   const rows = [
     ["TIP", "Naziv", "Oznaka", "Materijal", "MUID", "UID", "Količina", "Pojavljivanja", "KOMADA zapisi", "STR0", "STR1", "STR2", "STR3", "Izvori"],
     ...items.map((item) => [
-      item.type, item.name, item.designation, item.materialName, item.materialUid, item.uid,
+      corpusCsvText(item.type), corpusCsvText(item.name), corpusCsvText(item.designation), corpusCsvText(item.materialName), corpusCsvText(item.materialUid), corpusCsvText(item.uid),
       numberText(item.quantity), String(item.occurrences), String(item.declaredQuantityOccurrences),
-      ...item.sideApplications.map(String), item.sources.join(" | "),
+      ...item.sideApplications.map(String), corpusCsvText(item.sources.join(" | ")),
     ]),
   ];
-  return `\uFEFF${rows.map((row) => row.map(csvCell).join(";")).join("\r\n")}\r\n`;
+  return `\uFEFF${rows.map((row) => row.map(corpusCsvCell).join(";")).join("\r\n")}\r\n`;
 }
 
 function numberText(value: number): string {
   return String(value).replace(".", ",");
-}
-
-function csvCell(value: string): string {
-  return /[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }

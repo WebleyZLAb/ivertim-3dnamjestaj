@@ -1,10 +1,23 @@
 # Ivertim 3D
 
-Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaciju funkcija Corpus 3D softvera.
+Samostalan lokalni IVERTIM modeler za otvaranje, pravljenje, uređivanje i proizvodni izvoz Corpus S3D/E3D projekata. Verzija `1.0.0` predstavlja završeni praktični v1 tok; nedokazane Corpus/CNC semantike ostaju izričito read-only ili blokirane umjesto da ih aplikacija nagađa.
+
+## Pokretanje na Windowsu
+
+Dvaput klikni `Pokreni IVERTIM Corpus.vbs`. Pokretač radi skriveno, po potrebi instalira zaključane pakete i pravi novi produkcijski build, čeka dokazani lokalni Corpus health odgovor na `http://127.0.0.1:4317/`, pa tek onda otvara preglednik. Vlasnički read-only server služi samo `dist` sa localhosta i pri sljedećem startu automatski koristi noviji build bez nagađanja identiteta procesa. Ne šalje projekte niti materijale na internet. Dijagnostički log je u `%LOCALAPPDATA%\IVERTIM Corpus\launcher.log`.
+
+Potreban je Node.js `20.19+` ili `22.12+`; preporučena i lokalno provjerena verzija je zapisana u `.nvmrc`. Paketni alat je zaključan kroz `packageManager` u `package.json`.
+
+Provjera pokretača bez pokretanja servera i preglednika:
+
+```powershell
+pnpm verify:launcher
+```
 
 ## Trenutno stanje
 
 - read-only parser za Corpus `.S3D` projekte
+- centralno dekodiranje S3D/E3D i MatDat teksta po BOM-u ili XML deklaraciji, sa strogim UTF-8 čitanjem i Windows-1250 fallbackom; radna/izvozna XML kopija normalizuje deklaraciju na UTF-8 da se nazivi sa dijakriticima ne oštete
 - hijerarhija elemenata i ploča
 - frontalni, gornji i bočni 2D nacrt sa automatskim kotama izabranog elementa i lokalnim vektorskim SVG izvozom te interaktivni Three.js 3D prikaz; gornji nacrt koristi puni rotirani X/Z otisak elementa
 - standardni prednji, bočni, gornji i početni 3D pogledi
@@ -28,6 +41,7 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - precizno lokalno poravnanje nerotirane ploče uz lijevu/desnu, donju/gornju i prednju/zadnju granicu omotača elementa ili po centru sve tri ose, sa kontrolisanim unutrašnjim odmakom i bez nagađanja rotiranih ploča
 - uređivanje materijala, boje, providnosti i vidljivosti ploča sa trenutnim 3D osvježavanjem
 - ručno dodavanje, izmjena i brisanje osnovnih rupa ploče: Corpus izraz položaja, prečnik, dubina, ravan i ugao, uz Undo i S3D/E3D izvoz
+- valjane nove rupe dobijaju stvarnim projektima dokazani kompatibilni minimum `RCR=0`, `RTLTR=0`, `RZA=0`; postojeći dodatni atributi ostaju sačuvani, nepotpuni zapisi su vidljivo označeni, a nepoznata ugniježđena struktura blokira prepisivanje umjesto tihog gubitka
 - stvarne 3D šupljine za kroz-bušenja i slijepa bušenja na dokazanim suprotnim glavnim plohama `RPL=0/1`, uključujući cilindrični zid i dno slijepog otvora
 - linearna serija rupa po X ili Y osi sa zadanim brojem i razmakom, zapisana kao obične Corpus RXP/RYP operacije
 - pravougaona mreža rupa sa redovima, kolonama i nezavisnim X/Y razmakom, ograničena na 500 standardnih Corpus rupa
@@ -42,7 +56,7 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - višestruki izbor korijenskih elemenata pojedinačno iz stabla, Ctrl/Shift+klikom u 3D prikazu, odjednom za cijeli projekat ili samo za rezultate pretrage, uz `Esc` za čišćenje i posebno 3D isticanje; prikazuju se ukupna širina, visina i dubina njihovog rotiranog svjetskog omotača te svih šest udaljenosti do granica sobe, uključujući jasan izlazak van sobe; grupa se može sakriti, prikazati ili izolovati od ostalih korijena; podržani su zajedničko X/Y/Z pomjeranje, grupno 3D povlačenje, rotacija oko prvog označenog Corpus pivota, poravnanje svih ivica i centara prema tom sidru, ravnomjerna raspodjela stvarnih rotiranih omotača po X/Y/Z osi između krajnjih elemenata te slaganje prostornim redom sa tačno zadanim razmakom po bilo kojoj osi; cijela grupa se može centrirati po bilo kojoj osi prostorije, postaviti uz svih šest granica sa odmakom, vratiti unutar sobe, postaviti na mrežu, nezavisno kopirati jednom, kao seriju do 50 ponavljanja ili kao 2D mrežu sa nezavisnim X/Y/Z korakom kolona i redova, odnosno zajedno ukloniti kada sadrži samo dodane elemente, bez promjene izvornih fajlova i sa jednom Undo operacijom
 - Corpus `ELOCKED` i `EEDITABLE` zaštita se poštuje u pojedinačnoj i grupnoj geometriji, 3D pomjeranju, uređivanju ploča i bušenja te uklanjanju; identitet i stanje ostaju dostupni da korisnik može svjesno otključati element, dok pregled, vidljivost i nedestruktivno kopiranje ostaju dozvoljeni
 - precizno pomjeranje aktivnog elementa ili označene grupe tastaturom: strelice pomjeraju po X/Z, `PageUp`/`PageDown` po Y, osnovni korak je 10 mm, a uz `Shift` 1 mm; držanje tipke se ignoriše kako bi svaki svjesni pritisak ostao jedan Undo korak
-- tastaturna rotacija aktivnog elementa ili grupe: `Q` i `E` daju −90°/+90°, a `Shift+Q` i `Shift+E` fini korak od −1°/+1° oko Corpus pivota; ugao se normalizuje i zaštita zaključanih elemenata ostaje aktivna; uz aktivnu ili grupno označenu ploču komanda staje fail-closed umjesto da neočekivano rotira cijeli element
+- tastaturna rotacija aktivnog elementa, aktivne ili pojedinačno označene ploče te grupe elemenata: `Q` i `E` daju −90°/+90°, a `Shift+Q` i `Shift+E` fini korak od −1°/+1° oko odgovarajućeg Corpus pivota; ugao se normalizuje i zaštita zaključanih elemenata ostaje aktivna; višestruka grupa ploča i dalje staje fail-closed umjesto da neočekivano rotira cijeli element
 - `Ctrl+D` kopira aktivni korijenski element ili označenu grupu sa odmakom od 100 mm iza njenog X omotača; `Delete`/`Backspace` uz potvrdu uklanja samo elemente dodane u radnu kopiju, nikada izvorne S3D/E3D korijene
 - precizno grupno pozicioniranje postavlja minimalni ugao zajedničkog rotiranog omotača na tačne X/Y/Z svjetske koordinate, čuvajući unutrašnji raspored i jednu Undo operaciju
 - grupna rotacija može koristiti prvi označeni Corpus pivot ili centar zajedničkog rotiranog omotača; oba režima čuvaju Y položaje, međusobni raspored i jednu Undo operaciju
@@ -53,14 +67,15 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - SVG izvoz nacrta čuva isti grupni omotač i ukupne kote kao interaktivni prikaz, bez dupliranja pojedinačnih kota aktivnog elementa
 - poseban 3D režim `Premjesti` za povlačenje korijenskih elemenata po horizontalnoj ravni, sa mrežom 10 mm i jednim Undo korakom po potezu
 - trenutna provjera izlaska elementa iz prostorije i prostornog preklapanja dokazivih osnih omotača
-- projektna krojna lista koja grupiše ploče po materijalu i izvornim Corpus mjerama, zadržava trag do elementa, broj rupa i skrivene ploče
+- projektna krojna lista koja grupiše dijelove po vrsti, `TIPFRONTE`, materijalu i izvornim Corpus mjerama, zadržava trag do elementa, broj rupa i skrivene dijelove te ne spaja frontu sa običnom pločom istih mjera
 - krojna lista i potrošni materijal mogu se prebaciti između cijelog projekta i trenutnog grupnog izbora; oba CSV izvoza koriste vidljivi obuhvat i nazivom jasno označavaju grupni izvoz
 - ekran prostorije prikazuje odvojene brojeve izlazaka iz sobe i stvarnih zapreminskih preklapanja, sa prebacivanjem između cijelog projekta i označene grupe, punim opisom svakog upozorenja, direktnim otvaranjem problematičnih elemenata u 3D prikazu, automatskim vraćanjem izvan-sobnih elemenata i kontrolisanim SAT razdvajanjem preklopa po X ili Z osi kao jednim Undo korakom; 3D prikaz označava izlazak crvenim, a preklop ljubičastim omotačem
-- lokalni Excel-prijateljski CSV izvoz krojne liste u UTF-8 formatu sa tačka-zarez separatorom i decimalnim zarezom
+- lokalni Excel-prijateljski CSV izvoz krojne liste u UTF-8 formatu sa tačka-zarez separatorom i decimalnim zarezom; tekst iz Corpus projekta koji počinje Excel formula-znakom izvozi se kao tekst, ne kao izvršiva formula
 - odvojena proizvodna lista POTITEM zapisa: čuva TIP, deklarisani KOMADA zbir, identifikatore, materijal, broj pojavljivanja i STR0–STR3 primjene bez nagađanja dužine rubne trake
 - zaseban lokalni CSV izvoz potrošnog materijala i rubnih obrada
 - siguran izvoz izmjena u zaseban `.ivertim-corpus.json` fajl bez prepisivanja izvornog S3D-a
-- automatski lokalni oporavak izmijenjene radne kopije u preglednikovoj IndexedDB bazi; početni ekran nudi svjesno vraćanje ili odbacivanje posljednje sesije, bez clouda i bez izmjene izvornog S3D/E3D fajla
+- automatski lokalni oporavak izmijenjene radne kopije u preglednikovoj IndexedDB bazi; upisi i brisanja su serijalizovani, povratak Undo-om na čisto izvorno stanje iste otvorene sesije uklanja zastarjeli snapshot, dok otvaranje drugog ili ponovno otvaranje istog izvornog fajla ne briše prethodnu nedovršenu sesiju bez svjesnog „Odbaci“; početni ekran nudi vraćanje ili odbacivanje, bez clouda i bez izmjene izvornog S3D/E3D fajla
+- zatvaranje ili osvježavanje taba sa izmijenjenom radnom kopijom aktivira standardno upozorenje preglednika, dok otvaranje drugog projekta i vraćanje originala imaju zasebne potvrde
 - direktno otvaranje i potpuno lokalno strukturno uređivanje samostalnih `.E3D` elemenata (dodavanje, kopiranje, preimenovanje, kontura, rubovi i uklanjanje ploča), te dodavanje jednog E3D elementa u otvoreni S3D projekat
 - udvostručavanje bilo kojeg korijenskog elementa; izvorni S3D element se prvo bez gubitka nepoznatih blokova pretvara u lokalni E3D fragment, pa se kopija dodaje kao novi element
 - linearni niz do 50 kopija korijenskog elementa sa nezavisnim X/Y/Z razmakom, kao jedna provjerljiva Undo/Redo operacija
@@ -77,10 +92,13 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - svjetski presjek dodira preslikava se odvojeno u lokalnu radnu ravan `OBJ1` i `OBJ2`, sa jasno označenim lokalnim osama; još se ne proglašava automatskim `PMIN/PMAX`
 - read-only audit stvarnih S3D/E3D makro-parova: `pnpm audit:joints "PUTANJA_DO_FOLDERA"`
 - read-only audit ravni bušenja: `pnpm audit:holes "PUTANJA_DO_FOLDERA"`; dokazni zbir je u [`docs/hole-plane-evidence.md`](docs/hole-plane-evidence.md)
+- read-only proizvodni audit: `pnpm audit:s3d:production "PUTANJA_DO_FOLDERA"`; provjerava zbir ploča/fronti, pozitivne mjere i količine, potrošni materijal te UTF-8 CSV izlaze, a preskočene dijelove obrazlaže po mjeri, `TIPFRONTE`, `TIPDASKE` i ograničenom uzorku; svaki neuspjeh vraća nenulti izlazni kod
+- stvarni S3D skup razlikuje `TIPFRONTE=0` kao ploču, `1/2/3/4/6` kao frontne režime i `5` kao pomoćni dio; krojna lista i interfejs koriste tu klasifikaciju, dok strukturna konverzija ostaje ograničena na dokazani uređivi `TIPFRONTE=2`
 - read-only audit samostalnih i ugrađenih `PILA` operacija, sa lokalnim 2D pregledom potpuno razriješene `GX/GY → PX/PY` linije, dubine, `PSP`, `GS` i sirovih režimskih polja; dokaz i granice su u [`docs/saw-operation-evidence.md`](docs/saw-operation-evidence.md)
-- lokalno učitavanje Corpus `elmtex` foldera: tekstualni `MatDat.MXC/K3X` katalozi povezuju ploču sa slikom samo preko jednog tačnog `MATUID`; 3D prikaz koristi lokalnu teksturu, a podaci izabrane ploče prikazuju sliku, kataloški naziv, UID, `TEXX/TEXY/TEXZ` i jasan razlog kada pogodak nije bezbjedan; dokaz i audit su u [`docs/material-library-evidence.md`](docs/material-library-evidence.md)
+- lokalno učitavanje Corpus `elmtex` foldera: tekstualni `MatDat.MXC/K3X` katalozi povezuju ploču sa slikom samo preko jednog tačnog `MATUID`; jednoznačni neprazni MUID zapisi mogu se izabrati u editoru ploče te za korpus, HDF i fronte u generatoru, dok se dvosmisleni zapisi ne nude; 3D prikaz koristi lokalnu teksturu, a podaci izabrane ploče prikazuju sliku, kataloški naziv, UID, `TEXX/TEXY/TEXZ` i jasan razlog kada pogodak nije bezbjedan; dokaz i audit su u [`docs/material-library-evidence.md`](docs/material-library-evidence.md)
 - parametarski generator osnovnog E3D korpusa sa bokovima, podom, izborom pune gornje ploče ili prednjeg i zadnjeg vezača, ravnomjerno raspoređenim ili ručno visinski postavljenim policama sa nezavisnim prednjim/zadnjim uvlakom te do deset ravnomjerno ili ručno postavljenih unutrašnjih pregrada; police se dijele po stvarnim širinama nastalih polja; podržani su opciono postolje i uvučena cokla, naklopna ili unutar otvora uvučena vrata podijeljena po širini i frontovi ladica podijeljeni po visini, sa jednakim dijelovima ili ručnim omjerima i do deset fronti; poleđina može biti isključena, pločasta unutar korpusa ili tanka HDF poleđina na zadnjoj ravni sa zasebnim materijalom i bojom; vezači koriste dokazani `SMJER=2`, zadani presjek 100 × 18 mm i podesiv zadnji uvlak
-- pravljenje opšteg E3D elementa sa jednom početnom pločom, koji se dalje gradi postojećim alatima za dodavanje, kopiranje i uređivanje ploča
+- prazan projekat u ekranu prostorije nudi direktan početak novim korpusom ili praznim elementom; nakon pravljenja ili uvoza E3D-a odmah otvara aktivni element u editoru, pa tok bez prekida vodi od prostorije preko ploča i fronti do proizvodnje
+- pravljenje opšteg E3D elementa sa jednom početnom pločom, koji se dalje gradi postojećim alatima za dodavanje, kopiranje i uređivanje ploča; dijalog za novi dio može dodati i dokazanu običnu frontu `TIPDASKE=1` / `TIPFRONTE=2` sa početnim naklopnim mjerama, a strukturni editor može postojeći dio pretvoriti između obične ploče i te dokazane fronte kao jednu Undo operaciju
 - prilagođavanje omotača elementa njegovim direktnim pravougaonim pločama uz očuvan svjetski položaj; rotirane/nepotpune ploče i pod-elementi ostaju eksplicitno nepodržani umjesto nagađanja
 - udvostručavanje izabrane ploče u novom ili uvezenom elementu uz očuvanje konture, rupa, obrada i nepoznatih Corpus blokova
 - linearni niz do 50 kopija izabrane ploče sa nezavisnim X/Y/Z korakom; svaki puni `AD` fragment zadržava konturu, rupe, rubove i nepoznate obrade, a cijeli niz je jedna Undo operacija
@@ -107,12 +125,18 @@ Samostalan IVERTIM projekat za čitanje, analizu i kasniju vlastitu implementaci
 - postojeće `EVAR` vrijednosti mogu se uređivati bez promjene njihovih imena, `VARn` redoslijeda ili nepoznatih XML atributa; izrazi se čuvaju kao tekst i izvoze u S3D/E3D
 - novi, samostalni i uvezeni E3D elementi podržavaju i dodavanje, preimenovanje te uklanjanje varijabli; writer obnavlja dokazani neprekinuti `VAR0…VARn` niz, čuva ostale atribute i odbija dvosmislena imena
 - EVAR editor prije čuvanja lokalno prikazuje razriješenu vrijednost, nedostajuće reference, ciklične zavisnosti, nepodržanu sintaksu ili drugi nerješiv izraz; poznati geometrijski aliasi elementa ulaze u analizu, a nepoznata Corpus semantika ostaje samo upozorenje
-- izvoz novog `-IVERTIM.S3D` fajla mijenja samo dokazane atribute i ugrađuje dodane E3D elemente, čuvajući ostali izvorni XML
+- izvoz novog `-IVERTIM.S3D` fajla mijenja samo dokazane atribute i ugrađuje dodane E3D elemente, čuvajući ostali izvorni XML; čim postoje izmjene, izvoz postaje vidljiva glavna komanda i potvrđuje preuzimanje bez lažnog označavanja izvora kao sačuvanog
 - automatski testovi bez privatnih projektnih fajlova
 
 Originalni Corpus projekti ostaju izvan repoa, trenutno u `D:\sobasav`.
 
 ## Provjera
+
+```powershell
+pnpm check:v1
+```
+
+Pojedinačne razvojne i dokazne provjere:
 
 ```powershell
 pnpm test

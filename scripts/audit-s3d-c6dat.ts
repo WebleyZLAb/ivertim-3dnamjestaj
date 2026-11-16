@@ -4,6 +4,7 @@ import path from "node:path";
 import { inflateSync } from "node:zlib";
 import { isCorpusExpressionSyntaxSupported } from "../lib/corpus-expression.ts";
 import { decodeCorpusText } from "../lib/corpus-macro.ts";
+import { decodeCorpusTextDocument } from "../lib/corpus-text.ts";
 
 const root = path.resolve(process.argv[2] ?? ".");
 const files = await findS3dFiles(root);
@@ -15,7 +16,7 @@ let supportedFormulaCandidates = 0;
 const unsupportedFormulaExamples = new Map<string, number>();
 
 for (const file of files) {
-  const xml = await readFile(file, "utf8");
+  const xml = decodeCorpusTextDocument(await readFile(file)).text;
   for (const match of xml.matchAll(/<([A-Za-z_][\w:.-]*)\b[^>]*\bC6DAT\s*=\s*(["'])(.*?)\2[^>]*>/gs)) {
     occurrences += 1;
     const tag = match[1]!.toUpperCase();

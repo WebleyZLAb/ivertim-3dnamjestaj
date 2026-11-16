@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildCorpusCutList, corpusCutListCsv } from "../lib/corpus-cutlist.ts";
 import { generateCorpusCabinetE3d } from "../lib/corpus-generator.ts";
+import { createCorpusMaterialIndex, parseCorpusMaterialCatalog, selectableCorpusMaterials } from "../lib/corpus-material-library.ts";
 import { updateCorpusBoardAppearance, updateCorpusBoardHoles } from "../lib/corpus-model.ts";
 import { parseCorpusE3d, parseCorpusS3d, type CorpusS3dHole } from "../lib/corpus-s3d.ts";
 import { writeCorpusS3dWithImportedElements } from "../lib/corpus-s3d-writer.ts";
@@ -10,6 +11,19 @@ import { EMPTY_S3D } from "../src/demo-project.ts";
 test("zatvara osnovni tok od prazne prostorije do ponovo učitane proizvodne S3D kopije", () => {
   const originalSource = EMPTY_S3D;
   const emptyProject = parseCorpusS3d(originalSource);
+  const materials = selectableCorpusMaterials(createCorpusMaterialIndex([parseCorpusMaterialCatalog(`MATCOUNT=2
+<MAT>
+NAZIV=Bijela 18 mm
+MUID=MAT-BIJELA-18
+PICFILE=bijela.jpg
+<ENDMAT>
+<MAT>
+NAZIV=Hrast fronta
+MUID=MAT-HRAST-FRONT
+PICFILE=hrast.jpg
+<ENDMAT>`)]));
+  const corpusMaterial = materials.find(({ uid }) => uid === "MAT-BIJELA-18")!;
+  const frontMaterial = materials.find(({ uid }) => uid === "MAT-HRAST-FRONT")!;
   const generated = generateCorpusCabinetE3d({
     name: "Donji korpus 600",
     code: "DK600",
@@ -19,14 +33,14 @@ test("zatvara osnovni tok od prazne prostorije do ponovo učitane proizvodne S3D
     thickness: 18,
     shelfCount: 1,
     includeBack: true,
-    materialName: "Bijela 18 mm",
-    materialUid: "MAT-BIJELA-18",
+    materialName: corpusMaterial.name,
+    materialUid: corpusMaterial.uid,
     color: 0xf4f4f0,
     frontCount: 2,
     frontThickness: 18,
     frontGap: 2,
-    frontMaterialName: "Hrast fronta",
-    frontMaterialUid: "MAT-HRAST-FRONT",
+    frontMaterialName: frontMaterial.name,
+    frontMaterialUid: frontMaterial.uid,
     frontColor: 0x8b6542,
   });
   const generatedProject = parseCorpusE3d(generated.sourceXml);
@@ -79,6 +93,7 @@ test("zatvara osnovni tok od prazne prostorije do ponovo učitane proizvodne S3D
   assert.equal(reopenedFront.holeCount, 1);
   assert.equal(reopenedFront.holes[0]?.xExpression, "B/2-48");
   assert.equal(cutList.totalBoards, reopenedElement.boards.length);
+  assert.equal(cutList.totalFronts, 2);
   assert.equal(cutList.skippedBoards, 0);
   assert.equal(cutList.items.reduce((sum, item) => sum + item.holeCount, 0), 1);
   assert.match(corpusCutListCsv(cutList), /Hrast natur fronta/);

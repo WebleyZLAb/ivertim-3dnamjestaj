@@ -10,6 +10,40 @@ export type CorpusRecoverySnapshot = {
   workingCopy: CorpusWorkingCopyFile;
 };
 
+export type CorpusRecoveryProjectState = {
+  readonly sessionId: number;
+  readonly fileName: string;
+  readonly sourceXml: string;
+  readonly dirty: boolean;
+};
+
+export function shouldClearCorpusRecovery(
+  previous: CorpusRecoveryProjectState | null,
+  current: CorpusRecoveryProjectState,
+): boolean {
+  return Boolean(previous?.dirty
+    && !current.dirty
+    && previous.sessionId === current.sessionId
+    && previous.fileName === current.fileName
+    && previous.sourceXml === current.sourceXml);
+}
+
+export type CorpusRecoveryOperationQueue = {
+  run<T>(operation: () => Promise<T>): Promise<T>;
+};
+
+/** Serijalizuje IndexedDB save/clear operacije i ne dozvoljava da raniji neuspjeh blokira sljedeću. */
+export function createCorpusRecoveryOperationQueue(): CorpusRecoveryOperationQueue {
+  let pending: Promise<unknown> = Promise.resolve();
+  return {
+    run<T>(operation: () => Promise<T>): Promise<T> {
+      const result = pending.catch(() => undefined).then(operation);
+      pending = result.catch(() => undefined);
+      return result;
+    },
+  };
+}
+
 /**
  * Paket za lokalni oporavak sadrži izvorne bajtove kao tekst i postojeću
  * provjerljivu radnu kopiju. Ne zamjenjuje S3D/E3D fajl na disku.

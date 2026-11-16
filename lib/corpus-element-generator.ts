@@ -1,4 +1,5 @@
 import { appendCorpusE3dBoard } from "./corpus-s3d-writer.ts";
+import { corpusSafeFileStem } from "./corpus-file-name.ts";
 
 export type CorpusElementSpec = {
   name: string;
@@ -27,9 +28,7 @@ export function generateCorpusElementE3d(spec: CorpusElementSpec): CorpusGenerat
   const name = spec.name.trim();
   const code = spec.code.trim();
   const className = spec.className?.trim() || "TElement";
-  const fileStem = (code || name || "IVERTIM-ELEMENT")
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
-    .replace(/\s+/g, "-");
+  const fileStem = corpusSafeFileStem(code || name, "IVERTIM-ELEMENT");
   const emptyXml = `<?xml version="1.0" encoding="UTF-8"?>\n<ELEMENTFILE FILE="${escapeXml(fileStem)}.E3D" VER="17">\n  <ELEMENT ECLAS="${escapeXml(className)}" ENAME="${escapeXml(name)}" ESIFRA="${escapeXml(code)}" EXPOX="0" EYPOS="0" EZPOS="${formatNumber(spec.depth)}" EVISINA="${formatNumber(spec.height)}" ESIRINA="${formatNumber(spec.width)}" EDUBINA="${formatNumber(spec.depth)}" EKUT="0" EXKUT="0" EZKUT="0" EVISIBLE="true" EEDITABLE="true" ELOCKED="false">\n    <DASKE DCOUNT="0"></DASKE>\n  </ELEMENT>\n</ELEMENTFILE>`;
   const [boardHeight, boardWidth] = starterBoardDimensions(spec);
   const sourceXml = appendCorpusE3dBoard(emptyXml, {

@@ -242,6 +242,8 @@ export interface CorpusE3dImportSource {
 export interface CorpusNewBoardSpec {
   formulas?: Partial<Readonly<Record<"XF" | "YF" | "ZF" | "HF" | "SF" | "DF", string>>>;
   name: string;
+  /** Dokazani Corpus zapis za običnu frontu; ostale TIPFRONTE vrijednosti nisu podržane. */
+  frontType?: 2 | null;
   position: readonly [number, number, number];
   height: number;
   width: number;
@@ -483,17 +485,42 @@ export function moveCorpusE3dBoard(xml: string, fromIndex: number, toIndex: numb
 
 /** Mijenja samo DNAME izabrane direktne ploče korijenskog E3D elementa. */
 export function renameCorpusE3dBoard(xml: string, boardIndex: number, name: string): string {
-  if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Naziv ploče ne može biti prazan.");
   const { boards } = findRootBoardFragments(xml);
   const board = boards[boardIndex];
   if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena u E3D elementu.`);
   const fragment = xml.slice(board.start, board.end);
   const opening = scanXmlTags(fragment).find((token) => !token.closing && token.name === "AD");
   if (!opening) throw new Error(`Početak ploče ${boardIndex} nije pronađen.`);
-  const renamed = setXmlAttribute(opening.raw, "DNAME", escapeXmlAttribute(trimmed));
-  return xml.slice(0, board.start) + renamed + fragment.slice(opening.end) + xml.slice(board.end);
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Naziv ploče ne može biti prazan.");
+  const updated = setXmlAttribute(opening.raw, "DNAME", escapeXmlAttribute(trimmed));
+  return xml.slice(0, board.start) + updated + fragment.slice(opening.end) + xml.slice(board.end);
+}
+
+/** Mijenja naziv i dokazanu vrstu direktnog E3D dijela, bez diranja njegovog sadržaja. */
+export function replaceCorpusE3dBoardIdentity(xml: string, boardIndex: number, name: string, frontType: 2 | null): string {
+  if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Naziv ploče ne može biti prazan.");
+  if (frontType !== null && frontType !== 2) throw new Error("Podržana je samo dokazana Corpus fronta TIPFRONTE=2.");
+  const { boards } = findRootBoardFragments(xml);
+  const board = boards[boardIndex];
+  if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena u E3D elementu.`);
+  const fragment = xml.slice(board.start, board.end);
+  const opening = scanXmlTags(fragment).find((token) => !token.closing && token.name === "AD");
+  if (!opening) throw new Error(`Početak ploče ${boardIndex} nije pronađen.`);
+  const existingFrontType = xmlAttribute(opening.raw, "TIPFRONTE");
+  if (existingFrontType !== null && existingFrontType !== "0" && existingFrontType !== "2") {
+    throw new Error(`Postojeći TIPFRONTE=${existingFrontType} nije podržan za promjenu vrste dijela.`);
+  }
+  let updated = setXmlAttribute(opening.raw, "DNAME", escapeXmlAttribute(trimmed));
+  if (frontType === 2) {
+    updated = setXmlAttribute(updated, "TIPDASKE", "1");
+    updated = setXmlAttribute(updated, "TIPFRONTE", "2");
+  } else {
+    updated = removeXmlAttribute(removeXmlAttribute(updated, "TIPFRONTE"), "TIPDASKE");
+  }
+  return xml.slice(0, board.start) + updated + fragment.slice(opening.end) + xml.slice(board.end);
 }
 
 /** Zamjenjuje KRIVULJE izabrane E3D ploče provjerenom zatvorenom konturom ravnih segmenata. */
@@ -795,6 +822,7 @@ function validateNewBoardSpec(spec: CorpusNewBoardSpec): void {
   if (numbers.some((value) => !Number.isFinite(value))) throw new Error("Geometrija nove ploče mora sadržati konačne brojeve.");
   if (spec.height <= 0 || spec.width <= 0 || spec.thickness <= 0) throw new Error("Mjere nove ploče moraju biti veće od nule.");
   if (![0, 1, 2].includes(spec.direction)) throw new Error("Smjer nove ploče mora biti 0, 1 ili 2.");
+  if (spec.frontType !== undefined && spec.frontType !== null && spec.frontType !== 2) throw new Error("Podržana je samo dokazana Corpus fronta TIPFRONTE=2.");
   if (!Number.isInteger(spec.color) || spec.color < 0 || spec.color > 0xffffff) throw new Error("Boja nove ploče nije valjana.");
 }
 
@@ -857,7 +885,8 @@ function serializeNewBoard(spec: CorpusNewBoardSpec): string {
   const h = formatS3dNumber(spec.height / 1000);
   const w = formatS3dNumber(spec.width / 1000);
   const curve = `&quot;PTOCKA=0&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=0&quot;,&quot;PTZ=0&quot;,&quot;PTOCKA=1&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=${h}&quot;,&quot;PTZ=0&quot;,&quot;PTOCKA=2&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=${h}&quot;,&quot;PTZ=${w}&quot;,&quot;PTOCKA=3&quot;,&quot;PTSTYLE=0&quot;,&quot;PTX=0&quot;,&quot;PTZ=${w}&quot;`;
-  return `<AD DNAME="${escapeXmlAttribute(spec.name.trim())}" DXPOS="${formatS3dNumber(x)}" DYPOS="${formatS3dNumber(y)}" DZPOS="${formatS3dNumber(z)}" VISINA="${formatS3dNumber(spec.height)}" DUBINA="${formatS3dNumber(spec.width)}" DEBLJINA="${formatS3dNumber(spec.thickness)}" SMJER="${spec.direction}" DKUT="0" XKUT="0" ZKUT="0" MATNAME="${escapeXmlAttribute(spec.materialName)}" MATUID="${escapeXmlAttribute(spec.materialUid)}" BOJA="${spec.color}" PROZIRNO="${spec.transparent}" VISIBLE="${spec.visible}"${formulas}><RUPE/><KRIVULJE DATA="${curve}"/></AD>`;
+  const frontAttributes = spec.frontType === 2 ? ` TIPDASKE="1" TIPFRONTE="2"` : "";
+  return `<AD DNAME="${escapeXmlAttribute(spec.name.trim())}"${frontAttributes} DXPOS="${formatS3dNumber(x)}" DYPOS="${formatS3dNumber(y)}" DZPOS="${formatS3dNumber(z)}" VISINA="${formatS3dNumber(spec.height)}" DUBINA="${formatS3dNumber(spec.width)}" DEBLJINA="${formatS3dNumber(spec.thickness)}" SMJER="${spec.direction}" DKUT="0" XKUT="0" ZKUT="0" MATNAME="${escapeXmlAttribute(spec.materialName)}" MATUID="${escapeXmlAttribute(spec.materialUid)}" BOJA="${spec.color}" PROZIRNO="${spec.transparent}" VISIBLE="${spec.visible}"${formulas}><RUPE/><KRIVULJE DATA="${curve}"/></AD>`;
 }
 
 function setXmlAttribute(tag: string, name: string, value: string): string {
@@ -865,6 +894,10 @@ function setXmlAttribute(tag: string, name: string, value: string): string {
   if (pattern.test(tag)) return tag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`);
   const insertion = tag.match(/\/\s*>$/)?.index ?? tag.lastIndexOf(">");
   return `${tag.slice(0, insertion)} ${name}="${value}"${tag.slice(insertion)}`;
+}
+
+function removeXmlAttribute(tag: string, name: string): string {
+  return tag.replace(new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, "i"), "");
 }
 
 function replaceExistingElementVariables(
@@ -1026,6 +1059,9 @@ function serializeSourceHole(hole: CorpusS3dHole, before: CorpusS3dHole, source:
 }
 
 function serializeHole(hole: CorpusS3dHole): string {
+  if (hole.unknownChildTags?.length) {
+    throw new Error(`Rupa ${hole.name || hole.groupType} sadrži nepoznatu strukturu (${hole.unknownChildTags.join(", ")}) i ne može se sigurno prepisati.`);
+  }
   const tag = /^GRUPA\d+$/i.test(hole.groupType) ? hole.groupType.toUpperCase() : "GRUPA14";
   const attributes: Array<[string, string | number | null]> = [
     ["RXP", hole.xExpression], ["RYP", hole.yExpression], ["RPL", hole.plane], ["RNA", hole.name],
@@ -1034,11 +1070,16 @@ function serializeHole(hole: CorpusS3dHole): string {
   const encoded = attributes
     .filter(([, value]) => value !== null && value !== "")
     .map(([key, value]) => ` ${key}="${escapeXmlAttribute(String(value))}"`).join("");
+  const unknown = Object.entries(hole.unknownAttributes ?? {})
+    .map(([key, value]) => {
+      if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(key)) throw new Error(`Rupa sadrži neispravan naziv atributa ${key}.`);
+      return ` ${key}="${escapeXmlAttribute(value)}"`;
+    }).join("");
   const machiningEntries = Object.entries(hole.machining);
-  if (hole.machiningMode === null && !machiningEntries.length) return `<${tag}${encoded}/>`;
+  if (hole.machiningMode === null && !machiningEntries.length) return `<${tag}${encoded}${unknown}/>`;
   const mode = hole.machiningMode === null ? "" : ` MODE="${formatS3dNumber(hole.machiningMode)}"`;
   const machining = machiningEntries.map(([key, value]) => `<${key}>${escapeXmlText(value)}</${key}>`).join("");
-  return `<${tag}${encoded}><RAS${mode}>${machining}</RAS></${tag}>`;
+  return `<${tag}${encoded}${unknown}><RAS${mode}>${machining}</RAS></${tag}>`;
 }
 
 function escapeXmlText(value: string): string {
