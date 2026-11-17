@@ -485,6 +485,7 @@ export function App() {
     setSelected(element);
     setSelectedBoardIndex(null);
     setBoardGroupSelection([]);
+    setRightTab("properties");
   }, []);
 
   const inspectLayoutIssue = useCallback((issueElements: readonly CorpusS3dElement[]) => {
@@ -1632,6 +1633,8 @@ export function App() {
     setSelected(imported);
     setSelectedBoardIndex(null);
     setGroupSelection([]);
+    setViewMode("threeD");
+    setRightTab("properties");
     setLibraryOpen(false);
     setError(null);
   }
@@ -1897,13 +1900,22 @@ export function App() {
           <div className="desktop-panel-content" role="tabpanel" id={`panel-${rightTab}`} aria-labelledby={`panel-tab-${rightTab}`}>
 <aside className="tree-panel">
           <div className="panel-heading">
-            <div><span>Elementi projekta</span><button className="panel-room-link" onClick={() => setRightTab("room")}>Soba ↗</button></div>
+            <div><span>Elementi projekta</span><span className="panel-heading-actions"><button className="panel-add-element" onClick={openLibrary}>+ Dodaj</button><button className="panel-room-link" onClick={() => setRightTab("room")}>Soba ↗</button></span></div>
             <label className="search-box">
               <span>⌕</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Traži naziv ili šifru…" />
             </label>
           </div>
           <div className="tree-scroll">
+            {!project.inspection.elements.length && !query.trim() ? (
+              <div className="project-empty-elements">
+                <span aria-hidden="true">□</span>
+                <strong>Projekat je prazan</strong>
+                <p>Dodaj prvi element iz Corpus biblioteke ili napravi osnovni korpus.</p>
+                <button className="primary-command" onClick={openLibrary}>Otvori biblioteku</button>
+                <button className="secondary-button" onClick={() => { activateWindow("cabinet-generator"); setGeneratorOpen(true); }}>Napravi osnovni korpus</button>
+              </div>
+            ) : <>
             <div className="tree-group-actions">
               <span>{groupSelection.length ? `${groupSelection.length} označeno` : "Grupni izbor"}</span>
               {normalizedRootQuery && <button disabled={!visibleRootIndexes.length} title={visibleRootIndexes.length ? "Označi sve elemente koji odgovaraju pretrazi" : "Nema vidljivih elemenata koji odgovaraju pretrazi"} onClick={() => selectRootGroup(visibleRootIndexes)}>Označi vidljive</button>}
@@ -1919,6 +1931,7 @@ export function App() {
               onToggleGroup={toggleGroupElement}
               onSetVisibility={setTreeElementVisibility}
             />
+            </>}
           </div>
         </aside>
           <aside className="inspector-panel" aria-label="Svojstva izbora">
