@@ -1,6 +1,6 @@
 import { parseCorpusE3d, type CorpusS3dElement } from "./corpus-s3d.ts";
 import { corpusElementAtPath, replaceCorpusElement } from "./corpus-model.ts";
-import { inspectCorpusGeometryIssues, recalculateCorpusBoards, recalculateCorpusE3dVariables } from "./corpus-parametric.ts";
+import { inspectCorpusGeometryIssues, recalculateCorpusBoards, rebuildCorpusRectangleContours, recalculateCorpusE3dVariables } from "./corpus-parametric.ts";
 import { writeCorpusE3dGeometryCopy } from "./corpus-s3d-writer.ts";
 import { applyCorpusVariableVisibility } from "./corpus-variable-visibility.ts";
 
@@ -42,7 +42,7 @@ export function prepareCorpusBoardPlacement(root: CorpusS3dElement, requested: C
   }
   const staged = replaceTarget({ ...target, boards });
   if (inspectCorpusGeometryIssues(staged).some(issue => issue.reason === "value")) throw new Error("Postavljanje nije primijenjeno: zavisni izraz daje nedozvoljenu mjeru. Prethodno stanje je sačuvano.");
-  const resolved = applyCorpusVariableVisibility(recalculateCorpusBoards(staged));
+  const resolved = rebuildCorpusRectangleContours(root, applyCorpusVariableVisibility(recalculateCorpusBoards(staged)));
   const resolvedTarget = corpusElementAtPath([resolved],elementPath)!;
   if (moved.some(index => target.boards[index]!.position.some((value,axis) => !near(value,resolvedTarget.boards[index]!.position[axis]!)))) throw new Error("Postavljanje nije primijenjeno: zavisni izrazi ne daju traženi položaj. Prethodno stanje je sačuvano.");
   return { staged, resolved };

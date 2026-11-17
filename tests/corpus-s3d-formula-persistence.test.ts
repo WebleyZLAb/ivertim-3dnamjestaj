@@ -21,7 +21,7 @@ test("nested S3D placement uses inherited variables and persists numbers plus fo
   assert.deepEqual(resolved.children[0]!.boards.map(board=>board.position[0]),[65,165]);
   assert.equal(root.children[0]!.boards[0]!.formulas!.XF,"SHIFT");
   const copy=createCorpusWorkingCopyFile("nested.S3D",project.elements,[resolved]);
-  assert.equal(copy.version,10);
+  assert.equal(copy.version,11);
   assert.equal(copy.boardFormulaChanges.length,1);
   assert.deepEqual(copy.boardFormulaChanges[0]!.elementPath,[0,0]);
   const snapshot=parseCorpusRecoverySnapshot(JSON.parse(JSON.stringify(createCorpusRecoverySnapshot("nested.S3D",xml.length,xml,copy))));
@@ -66,4 +66,16 @@ test("v10 validates formula patches and stale baselines while legacy v9 remains 
   assert.throws(()=>applyCorpusWorkingCopyProject("nested.S3D",project.elements,project.room,missing),/podržane verzije/);
   const legacy={...createCorpusWorkingCopyFile("nested.S3D",project.elements,project.elements),version:9,boardFormulaChanges:undefined};
   assert.deepEqual(applyCorpusWorkingCopyProject("nested.S3D",project.elements,project.room,legacy).elements,project.elements);
+});
+
+test("S3D export removes multiline formulas without changing saved coordinates or opaque XML", () => {
+ const source = xml.replace('XF="SHIFT"', 'XF="SHIFT +\n0"');
+ const project = parseCorpusS3d(source), root = project.elements[0]!, child = root.children[0]!;
+ const edited = {...root, children: [{...child, boards: child.boards.map((board, index) => index === 0 ? {...board, formulas: {} as Record<string,string>} : board)}]};
+ const output = writeCorpusS3dGeometryCopy(source, project.elements, [edited]);
+ const reopened = parseCorpusS3d(output).elements[0]!.children[0]!.boards;
+ assert.equal(reopened[0]!.formulas?.XF, undefined);
+ assert.equal(reopened[0]!.position[0], 25);
+ assert.equal(reopened[1]!.formulas?.XF, 'A.x+100');
+ assert.equal((output.match(/<OPAQUE value="unchanged"\/>/g) ?? []).length, 2);
 });

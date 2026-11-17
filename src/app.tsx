@@ -1,3 +1,4 @@
+import { prepareCorpusElementVariableChange } from "../lib/corpus-element-variables";
 import { applyCorpusE3dBoardPlacement, prepareCorpusBoardPlacement } from "../lib/corpus-board-placement-formulas";
 import { corpusBoardSelectionAfterStructure, type CorpusBoardStructureChange } from "../lib/corpus-board-selection";
 import { corpusRoomCameraSessions } from "../lib/corpus-camera-session";
@@ -58,7 +59,7 @@ import { resolveCorpusSawPaths, type CorpusSawResolution } from "../lib/corpus-s
 import { createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
 import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoardLocalContactRectangle } from "../lib/corpus-board-contact";
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
-import { applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusElementVariables, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
+import { assertCorpusWorkingCopyChanges, applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
 import { createCorpusRecoverySnapshot, type CorpusRecoverySnapshot } from "../lib/corpus-recovery";
 import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, positionCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
@@ -737,16 +738,18 @@ export function App() {
       }
       return;
     }
-    const currentNames = Object.keys(selected.variables).sort();
-    const nextNames = Object.keys(variables).sort();
-    if (JSON.stringify(currentNames) !== JSON.stringify(nextNames)) {
-      setError("Dodavanje, preimenovanje i uklanjanje varijabli dostupno je samo za samostalne, nove ili uvezene E3D elemente.");
-      return;
+    if (!path || !project) return;
+    try {
+      const rootIndex = path[0]!;
+      const resolved = prepareCorpusElementVariableChange(project.inspection.elements[rootIndex]!, [0,...path.slice(1)], variables);
+      setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], dirty: true, inspection: { ...current.inspection, elements: current.inspection.elements.map((entry,index) => index === rootIndex ? resolved : entry) } } : current);
+      setSelected(corpusElementAtPath([resolved],[0,...path.slice(1)]));
+      setError(null);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "Varijable elementa nije moguće promijeniti.";
+      setError(message);
+      return message;
     }
-    const { elements, updated: updatedSelection } = updateCorpusElementVariables(project!.inspection.elements, selected, variables);
-    if (!updatedSelection) return;
-    setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements }, dirty: true } : current);
-    setSelected(updatedSelection);
   }
 
   function updateSelectedBoard(boardIndex: number, patch: BoardGeometryPatch) {
@@ -1181,6 +1184,7 @@ export function App() {
     if (path.some((_,index) => { const ancestor = corpusElementAtPath(project.inspection.elements,path.slice(0,index+1)); return !ancestor || !corpusElementAllowsModeling(ancestor); })) throw new Error("Nadređeni ili izabrani element je zaključan ili neurediv.");
     const root = project.inspection.elements[path[0]!]!;
     const { resolved } = prepareCorpusBoardPlacement(root,requested,[0,...path.slice(1)]);
+    assertCorpusWorkingCopyChanges([root],[resolved]);
     setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], dirty: true, inspection: { ...current.inspection, elements: current.inspection.elements.map((entry,index) => index === path[0] ? resolved : entry) } } : current);
     const next = corpusElementAtPath([resolved],[0,...path.slice(1)])!;
     setSelected(next);
@@ -1945,7 +1949,7 @@ export function App() {
                   {selectedBoardIndex === null && Object.keys(selected.variables).length > 0 && <details className="inspector-variables" open key={`${project.fileName}:${findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name}`}>
                     <summary>Konstrukcijske varijable <span>{Object.keys(selected.variables).length}</span></summary>
                     <ElementVariablesEditor compact element={selected} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} elementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEdit={corpusElementAllowsModeling(selected)} canChangeStructure={false} onUpdate={updateSelectedElementVariables} />
-                    {!(project.inspection.format === "corpus-e3d" || isImportedRoot(project, project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected)) && <p className="inspector-help">Izvorni S3D čuva vrijednosti; preračunavanje konstrukcije dostupno je za E3D elemente.</p>}
+                    {!(project.inspection.format === "corpus-e3d" || isImportedRoot(project, project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected)) && <p className="inspector-help">Promjena varijabli računa podržane izraze geometrije. Rupe i obrade zadržavaju izvorne zapise.</p>}
                   </details>}
                   {groupSelection.length >= 2 && <GroupVariableEditor key={groupSelection.join(",")} elements={selectedGroupElements} blockedReason={editorSession.current ? "Zatvori editor prije grupne primjene." : groupSelection.some(index=>index<project.originalInspection.elements.length || !project.importedE3dSources[index-project.originalInspection.elements.length]) ? "Za ovu primjenu svaki označeni element mora imati vlastiti E3D izvor. Izvorni S3D elementi nisu podržani." : undefined} onPrepare={prepareGroupVariable} onApply={applyGroupVariable} />}
                   <button className="inspector-primary" onClick={() => openDocument("data")}>{selectedBoardIndex !== null ? "Uredi ploču" : "Uredi element"}</button>

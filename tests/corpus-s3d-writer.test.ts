@@ -512,3 +512,107 @@ test("prva rupa dodaje nedostajuci RUPE bez gubitka ploce i drugih zapisa", () =
     if (body.includes("UNKNOWN")) assert.ok(output.includes('<UNKNOWN X="1"/>'));
   }
 });
+
+test("attribute edits ignore lookalike names inside opaque quoted values", () => {
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD CUSTOM='keep DNAME="decoy" XF="99"' DNAME="A" XF="25" DXPOS="25"><OPAQUE/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const renamed = renameCorpusE3dBoard(source, 0, "B");
+ assert.equal(parseCorpusE3d(renamed).elements[0]!.boards[0]!.name, "B");
+ assert.ok(renamed.includes(`CUSTOM='keep DNAME="decoy" XF="99"'`));
+});
+
+test("single-quoted source attributes safely store apostrophes in renamed boards", () => {
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME='A'><OPAQUE/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const output = renameCorpusE3dBoard(source, 0, "O'Brien & sin");
+ assert.equal(parseCorpusE3d(output).elements[0]!.boards[0]!.name, "O'Brien & sin");
+ assert.ok(output.includes("DNAME='O&apos;Brien &amp; sin'"));
+ assert.match(output, /<OPAQUE\/>/);
+});
+
+test("EVAR replacement preserves opaque assignment-like text and removes multiline variables", () => {
+ const source = `<ELEMENTFILE><ELEMENT><EVAR CUSTOM='keep VAR8="DECOY=99"' VAR0="A=1 +
+2" VAR1="B=4"/><DASKE/></ELEMENT></ELEMENTFILE>`;
+ const output = replaceCorpusE3dElementVariables(source, [0], { C: "5" });
+ assert.deepEqual(parseCorpusE3d(output).elements[0]!.variables, { C: "5" });
+ assert.ok(output.includes(`CUSTOM='keep VAR8="DECOY=99"'`));
+});
+
+test("S3D updates existing multiline EVAR without touching opaque assignment-like text", () => {
+ const source = `<PROJECTFILE><ELEMENT ENAME="A"><EVAR CUSTOM='keep VAR8="DECOY=99"' VAR0="A=1 +
+2"/></ELEMENT></PROJECTFILE>`;
+ const project = parseCorpusS3d(source);
+ const changed = updateCorpusElementVariables(project.elements, project.elements[0]!, { A: "4" });
+ const output = writeCorpusS3dGeometryCopy(source, project.elements, changed.elements);
+ assert.deepEqual(parseCorpusS3d(output).elements[0]!.variables, { A: "4" });
+ assert.ok(output.includes(`CUSTOM='keep VAR8="DECOY=99"'`));
+});
+
+test("board commands count only direct DASKE boards and preserve nested opaque namesakes", () => {
+ const opaque = `<PRIVATE><AD DNAME="Decoy"><DASKE><AD DNAME="Inner"/></DASKE></AD></PRIVATE>`;
+ const source = `<ELEMENTFILE><ELEMENT ENAME="Root"><DASKE>${opaque}<AD DNAME="Real"><OPAQUE/></AD><AD DNAME="Other"/></DASKE></ELEMENT></ELEMENTFILE>`;
+ const output = renameCorpusE3dBoard(source, 0, "Renamed");
+ assert.equal(parseCorpusE3d(output).elements[0]!.boards[0]!.name, "Renamed");
+ assert.ok(output.includes(opaque));
+ const removed = removeCorpusE3dBoard(source, 0);
+ assert.deepEqual(parseCorpusE3d(removed).elements[0]!.boards.map(board => board.name), ["Other"]);
+ assert.ok(removed.includes(opaque));
+});
+
+test("EVAR and child paths ignore identically named nodes inside opaque branches", () => {
+ const opaque = `<PRIVATE><EVAR VAR0="A=99"/><ELMLIST><ELM ENAME="Decoy"><EVAR VAR0="B=99"/></ELM></ELMLIST></PRIVATE>`;
+ const source = `<ELEMENTFILE><ELEMENT ENAME="Root">${opaque}<EVAR VAR0="A=1"/><ELMLIST><ELM ENAME="Real"><EVAR VAR0="B=2"/></ELM></ELMLIST></ELEMENT></ELEMENTFILE>`;
+ const output = replaceCorpusE3dElementVariables(replaceCorpusE3dElementVariables(source, [0], {A:"3"}), [0,0], {B:"4"});
+ const root = parseCorpusE3d(output).elements[0]!;
+ assert.deepEqual(root.variables, {A:"3"});
+ assert.deepEqual(root.children[0]!.variables, {B:"4"});
+ assert.ok(output.includes(opaque));
+});
+
+test("S3D geometry export updates parser-visible boards instead of opaque AD nodes", () => {
+ const opaque = `<PRIVATE><AD DNAME="Decoy" DXPOS="99"/></PRIVATE>`;
+ const source = `<PROJECTFILE><ELEMENT ENAME="Root"><DASKE>${opaque}<AD DNAME="Real" DXPOS="0" DYPOS="0" DZPOS="0" VISINA="100" DUBINA="80" DEBLJINA="18" SMJER="2" DKUT="0" XKUT="0" ZKUT="0"/></DASKE></ELEMENT></PROJECTFILE>`;
+ const project = parseCorpusS3d(source), root = project.elements[0]!;
+ const changed = updateCorpusBoard(project.elements, root, 0, {position:[25,0,0], width:80, height:100, thickness:18, direction:2, angle:0, xAngle:0, zAngle:0});
+ const output = writeCorpusS3dGeometryCopy(source, project.elements, changed.elements);
+ assert.equal(parseCorpusS3d(output).elements[0]!.boards[0]!.position[0], 25);
+ assert.ok(output.includes(opaque));
+});
+
+test("root extraction ignores ELEMENT nodes inside unknown project branches", () => {
+ const source = `<PROJECTFILE><PRIVATE><ELEMENT ENAME="Decoy"/></PRIVATE><ELEMENT ENAME="Real"><DASKE/></ELEMENT></PROJECTFILE>`;
+ const output = createCorpusE3dSourceFromS3d(source, 0);
+ assert.equal(parseCorpusE3d(output).elements[0]!.name, "Real");
+ assert.doesNotMatch(output, /Decoy/);
+});
+
+test("contour editing changes only the direct board contour and keeps nested opaque contours", () => {
+ const opaque = `<PRIVATE><KRIVULJE DATA="opaque-curve"><KRIVULJE DATA="inner"/></KRIVULJE></PRIVATE>`;
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Real" VISINA="100" DUBINA="80">${opaque}<KRIVULJE DATA="old"/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const output = replaceCorpusE3dBoardContour(source, 0, [{x:0,z:0},{x:120,z:0},{x:120,z:90},{x:0,z:90}]);
+ const board = parseCorpusE3d(output).elements[0]!.boards[0]!;
+ assert.equal(board.curvePoints.length, 4);
+ assert.equal(board.height, 120);
+ assert.equal(board.width, 90);
+ assert.ok(output.includes(opaque));
+});
+
+test("edge banding edits only direct consumables and preserves opaque POTITEM nodes", () => {
+ const opaque = `<PRIVATE><POTROSNI COUNT="1"><POTITEM TIP="0" NAZIV="Decoy"/></POTROSNI></PRIVATE>`;
+ const nested = `<PRIVATE><POTITEM TIP="0" NAZIV="Nested"/></PRIVATE>`;
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Real">${opaque}<POTROSNI COUNT="2">${nested}<POTITEM TIP="0" NAZIV="Old"/><POTITEM TIP="1" NAZIV="Keep"/></POTROSNI><RUPE/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const output = replaceCorpusE3dBoardEdgeBanding(source, 0, {name:"New",materialName:"M",materialUid:"MU",uid:"U",sides:[true,false,false,false]});
+ const board = parseCorpusE3d(output).elements[0]!.boards[0]!;
+ assert.ok(output.includes(opaque));
+ assert.ok(output.includes(nested));
+ assert.deepEqual(board.consumables.map(item => item.name), ["Keep","New"]);
+});
+
+test("edge banding preserves attributes of a self-closing consumables container", () => {
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="Real"><POTROSNI COUNT='0' CUSTOM='keep'/><RUPE/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const spec = {name:"New",materialName:"M",materialUid:"MU",uid:"U",sides:[true,false,false,false] as const};
+ const output = replaceCorpusE3dBoardEdgeBanding(source, 0, spec);
+ assert.match(output, /CUSTOM='keep'/);
+ assert.equal(parseCorpusE3d(output).elements[0]!.boards[0]!.consumables[0]!.name, "New");
+ const empty = replaceCorpusE3dBoardEdgeBanding(source, 0, {...spec, sides:[false,false,false,false]});
+ assert.match(empty, /CUSTOM='keep'/);
+ assert.equal(parseCorpusE3d(empty).elements[0]!.boards[0]!.consumables.length, 0);
+});
