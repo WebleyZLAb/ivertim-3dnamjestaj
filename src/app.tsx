@@ -1,3 +1,7 @@
+import { GolaCutsDialog } from "./gola-cuts-dialog";
+import { LibraryFolderTree, LibraryElementCard } from "./library-browser-parts";
+import { libraryDisplayPath, libraryFolders, libraryChildren, libraryMatches, libraryItemKind, type LibraryKind } from "../lib/corpus-library-browser";
+import { decodeCorpusTextDocument } from "../lib/corpus-text";
 import { prepareCorpusElementVariableChange } from "../lib/corpus-element-variables";
 import { applyCorpusE3dBoardPlacement, prepareCorpusBoardPlacement } from "../lib/corpus-board-placement-formulas";
 import { corpusBoardSelectionAfterStructure, type CorpusBoardStructureChange } from "../lib/corpus-board-selection";
@@ -205,6 +209,7 @@ export function App() {
   const [viewMode, setViewMode] = useState<"data" | "drawing" | "threeD" | "room" | "cutlist">("threeD");
   const [libraryFiles, setLibraryFiles] = useState<readonly LibraryElementFile[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [golaCutsOpen,setGolaCutsOpen]=useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [elementCreatorOpen, setElementCreatorOpen] = useState(false);
   const [macroFiles, setMacroFiles] = useState<readonly LibraryElementFile[]>([]);
@@ -213,6 +218,7 @@ export function App() {
   const [macroLibraryOpen, setMacroLibraryOpen] = useState(false);
   const [macroQuery, setMacroQuery] = useState("");
   const [selectedMacro, setSelectedMacro] = useState<{ path: string; document: CorpusCmkDocument } | null>(null);
+  const [libraryKind, setLibraryKind] = useState<LibraryKind>("elements");
   const [localCorpus, setLocalCorpus] = useState<LocalCorpusLibrary | null>(null);
   const [materialLibrary, setMaterialLibrary] = useState<LoadedMaterialLibrary | null>(null);
   const [recovery, setRecovery] = useState<CorpusRecoverySnapshot | null>(null);
@@ -228,7 +234,7 @@ export function App() {
       if (data.version !== 1 || !Array.isArray(data.catalogs) || !Array.isArray(data.elements) || !Array.isArray(data.edges) || !Array.isArray(data.files)) throw new Error("Neispravan lokalni Corpus katalog.");
       setLocalCorpus(data);
       setLibraryFiles(data.elements.map(path => ({ name: path.split("/").at(-1)!, webkitRelativePath: path, size: 0,
-        text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Element nije dostupan: " + path); return response.text(); } })));
+        text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Element nije dostupan: " + path); return decodeCorpusTextDocument(new Uint8Array(await response.arrayBuffer())).text; } })));
       setMacroFiles((data.macros ?? []).map(path => ({ name: path.split("/").at(-1)!, webkitRelativePath: path, size: 0,
         text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Makro nije dostupan: " + path); return decodeCorpusText(new Uint8Array(await response.arrayBuffer())); } })));
       const index = createCorpusMaterialIndex(data.catalogs);
@@ -468,7 +474,7 @@ export function App() {
   function loadProject(fileName: string, fileSize: number, sourceXml: string, inspection: CorpusS3dInspection) {
     editorSession.current = null;
     setStartupOpen(false); setViewMode("threeD"); setDocumentWindows([]); setMaterialReplacementOpen(false); setRightTab("elements");
-    setLibraryOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
+    setLibraryOpen(false); setGolaCutsOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
     void rememberProject({ fileName, fileSize, sourceXml }).then(setRecentProjects).catch(() => setRecentError("Nedavne projekte nije moguće sačuvati."));
 
     const standaloneE3dSource = inspection.format === "corpus-e3d" && inspection.elements[0]
@@ -606,7 +612,9 @@ export function App() {
     if (!entry || !confirmReplace()) return;
     try { const inspection = /\.e3d$/i.test(entry.fileName) ? parseCorpusE3d(entry.sourceXml) : parseCorpusS3d(entry.sourceXml); loadProject(entry.fileName, entry.fileSize, entry.sourceXml, inspection); } catch (reason) { setError(reason instanceof Error ? reason.message : "Projekat nije moguće otvoriti."); }
   }
-  const openLibrary = () => { activateWindow("library"); libraryFiles.length ? setLibraryOpen(true) : libraryInputRef.current?.click(); };
+  const openLibrary = () => { setLibraryKind("elements"); activateWindow("library"); setLibraryOpen(true); };
+  const openGolaCuts = () => { activateWindow("gola-cuts"); setGolaCutsOpen(true); };
+  const openHardwareLibrary = () => { setLibraryKind("hardware"); activateWindow("library"); setLibraryOpen(true); };
   const menus: DesktopMenu[] = [
     { label: "Projekat", items: [
       { label: "Novi projekat", onClick: newDesktopProject }, { label: "Učitaj projekat…", onClick: () => inputRef.current?.click() },
@@ -615,11 +623,11 @@ export function App() {
       { label: "Učitaj radnu kopiju…", disabled: !project, onClick: () => workingCopyInputRef.current?.click() },
       { label: "Izvezi Corpus projekat…", disabled: !project?.dirty, onClick: exportS3dCopy },
       { label: "Vrati originalni projekat", disabled: !project?.dirty, onClick: resetWorkingCopy },
-      { label: "Zatvori projekat", disabled: !project, separator: true, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
+      { label: "Zatvori projekat", disabled: !project, separator: true, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setGolaCutsOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
     ] },
     { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
+    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
     { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
     { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
@@ -629,7 +637,7 @@ export function App() {
   const chrome = <DesktopHeader menus={menus}>
     <DesktopTool label="Novi projekat" icon="new" onClick={newDesktopProject} /><DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} /><DesktopTool label="Sačuvaj radnu kopiju" icon="save" disabled={!project?.dirty} onClick={exportWorkingCopy} /><span className="desktop-toolbar-separator" />
     <DesktopTool label="Poništi" icon="undo" disabled={!project?.history.length} onClick={undoWorkingCopy} /><DesktopTool label="Ponovi" icon="redo" disabled={!project?.future.length} onClick={redoWorkingCopy} /><span className="desktop-toolbar-separator" />
-    <DesktopTool label="3D prostorija" icon="room" disabled={!project} active={viewMode === "threeD"} onClick={() => setViewMode("threeD")} /><DesktopTool label="Tehnički nacrt" icon="drawing" disabled={!project} active={viewMode === "drawing"} onClick={() => setViewMode("drawing")} /><DesktopTool label="Biblioteka elemenata" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openLibrary} /><DesktopTool label="Materijali i krojna lista" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} /><DesktopTool label="Postavke prostorije" icon="settings" disabled={!project} onClick={() => setRightTab("room")} />
+    <DesktopTool label="3D prostorija" icon="room" disabled={!project} active={viewMode === "threeD"} onClick={() => setViewMode("threeD")} /><DesktopTool label="Tehnički nacrt" icon="drawing" disabled={!project} active={viewMode === "drawing"} onClick={() => setViewMode("drawing")} /><DesktopTool label="Biblioteka elemenata" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openLibrary} /><DesktopTool label="Biblioteka okova" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openHardwareLibrary} /><DesktopTool label="Materijali i krojna lista" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} /><DesktopTool label="Postavke prostorije" icon="settings" disabled={!project} onClick={() => setRightTab("room")} />
   </DesktopHeader>;
   const startup = startupOpen && <StartProjectWindow recent={recentProjects} onNew={newDesktopProject} onOpen={() => inputRef.current?.click()} onRecent={openRecentProject} onClose={() => setStartupOpen(false)}>
 
@@ -1826,8 +1834,15 @@ export function App() {
         />
 
 
+      {golaCutsOpen && selected && (()=>{
+        const target=structuredE3dTarget(undefined,true);
+        let sourceXml:string|null=null;
+        let message="Usijecanje je dostupno za element dodat iz biblioteke ili samostalni E3D. Učitaj element iz biblioteke pa izaberi njegove stranice.";
+        if(target)try{sourceXml=writeCorpusE3dGeometryCopy(target.source.sourceXml,[target.source.originalElement],[project.inspection.elements[target.rootIndex]!]);}catch(e){message=e instanceof Error?e.message:String(e);}
+        return <GolaCutsDialog key={findCorpusElementPath(project.inspection.elements,selected)?.join(".")} element={selected} sourceXml={sourceXml} elementPath={target?.elementPath??[0]} message={message} onClose={()=>setGolaCutsOpen(false)} onApply={xml=>{if(target)applyStructuredE3dSource(target,xml,selectedBoardIndex);}}/>;
+      })()}
       {libraryOpen && project.inspection.format === "corpus-s3d" && (
-        <ElementLibraryDialog files={libraryFiles} onChooseFolder={() => libraryInputRef.current?.click()} onClose={() => setLibraryOpen(false)} onAdd={(sourceFile, sourceXml) => {
+        <ElementLibraryDialog key={libraryKind} kind={libraryKind} onKindChange={setLibraryKind} localFiles={localCorpus?.files ?? []} files={libraryFiles} onChooseFolder={() => libraryInputRef.current?.click()} onClose={() => setLibraryOpen(false)} onAdd={(sourceFile, sourceXml) => {
           try { addE3dSource(sourceFile, sourceXml); } catch (reason) { setError(reason instanceof Error ? reason.message : "Element nije moguće dodati."); }
         }} />
       )}
@@ -1879,6 +1894,7 @@ export function App() {
           <button aria-label="Tehnički nacrt" title="Tehnički nacrt" aria-pressed={viewMode === "drawing"} onClick={() => setViewMode("drawing")}><Icon name="drawing" variant="twotone" /><small>Nacrt</small></button>
           <hr />
           <button aria-label="Biblioteka elemenata" title="Biblioteka elemenata" disabled={project.inspection.format !== "corpus-s3d"} onClick={openLibrary}><Icon name="library" variant="twotone" /><small>Elementi</small></button>
+          <button aria-label="Gola profili" title="Usijecanje stranica za Gola L i C profile" disabled={!selected} onClick={openGolaCuts}><span className="gola-tool-symbol" aria-hidden="true">G</span><small>Gola</small></button>
           <button aria-label="Uredi izabrani element" title="Uredi izabrani element" disabled={!selected} onClick={() => openDocument("data")}><Icon name="editor" variant="twotone" /><small>Editor</small></button>
           <button aria-label="Materijali i krojna lista" title="Materijali i krojna lista" onClick={() => openDocument("cutlist")}><Icon name="cutlist" variant="twotone" /><small>Krojna</small></button>
           <hr />
@@ -2057,9 +2073,13 @@ function WorkspaceGeometryEditor({ element, onUpdate }: { element: CorpusS3dElem
   </form>;
 }
 
-function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
+function ElementLibraryDialog({ files: allFiles, kind, onKindChange, localFiles, onChooseFolder, onClose, onAdd }: {
+  kind: LibraryKind; onKindChange(kind:LibraryKind):void; localFiles:readonly string[];
   files: readonly LibraryElementFile[]; onChooseFolder(): void; onClose(): void; onAdd(sourceFile: string, sourceXml: string): void;
 }) {
+  const files = useMemo(() => allFiles.filter(file => !libraryDisplayPath(libraryFilePath(file)).split("/").some(part => part.toLowerCase() === "rubbish") && libraryItemKind(libraryFilePath(file)) === kind), [allFiles,kind]);
+  const pictures = useMemo(() => new Map(localFiles.map(path => [path.toLowerCase(),path])), [localFiles]);
+  const [visibleCount,setVisibleCount] = useState(48);
   const [query, setQuery] = useState("");
   const [previewBoardIndex, setPreviewBoardIndex] = useState<number | null>(null);
   const [folder, setFolder] = useState("");
@@ -2068,19 +2088,11 @@ function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
   const [dimensionDraft,setDimensionDraft]=useState<{file:LibraryElementFile;values:Record<"width"|"height"|"depth",string>}|null>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useEffect(() => { setFolder(""); setQuery(""); setSelectedFile(null); }, [files]);
-  const folders = useMemo(() => {
-    const paths = new Set<string>();
-    for (const file of files) {
-      const parts = libraryFilePath(file).split("/").slice(0, -1);
-      for (let depth = 1; depth <= parts.length; depth++) paths.add(parts.slice(0, depth).join("/"));
-    }
-    return Array.from(paths).sort((left, right) => left.localeCompare(right, "sr"));
-  }, [files]);
-  const matches = useMemo(() => files.filter((file) => {
-    const path = libraryFilePath(file);
-    return (!folder || path.startsWith(folder + "/")) && (!query.trim() || path.toLocaleLowerCase("sr").includes(query.trim().toLocaleLowerCase("sr")));
-  }), [files, folder, query]);
-  const visibleFiles = matches.slice(0, 200);
+  const folders = useMemo(() => libraryFolders(files.map(libraryFilePath)), [files]);
+  const matches = useMemo(() => files.filter(file => libraryMatches(libraryFilePath(file),folder,query)), [files,folder,query]);
+  const subfolders = query.trim() ? [] : libraryChildren(folders,folder);
+  const visibleFiles = matches.slice(0,visibleCount);
+  function chooseFolder(path:string) { setFolder(path); setQuery(""); setSelectedFile(null); setVisibleCount(48); }
   const activeFile = selectedFile && visibleFiles.includes(selectedFile) ? selectedFile : visibleFiles[0] ?? null;
   const current = preview?.file === activeFile ? preview : null;
   const sourceValues={width:String(current?.element?.width??""),height:String(current?.element?.height??""),depth:String(current?.element?.depth??"")};
@@ -2112,13 +2124,13 @@ function ElementLibraryDialog({ files, onChooseFolder, onClose, onAdd }: {
     dialogRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
     return () => previousFocus?.focus();
   }, []);
-  return <DesktopWindow id="library" title="Biblioteka elemenata" className="desktop-library-window" onClose={onClose}><div className="library-backdrop element-library-backdrop">
+  return <DesktopWindow id="library" title={kind === "hardware" ? "Biblioteka okova" : "Biblioteka elemenata"} className="desktop-library-window visual-library-window" onClose={onClose}><div className="library-backdrop element-library-backdrop">
     <section ref={dialogRef} className="element-library-dialog">
       <header><div><p className="eyebrow">Tvoja lokalna biblioteka</p><h2 id="element-library-title">Izaberi element</h2></div><button aria-label="Zatvori biblioteku" onClick={onClose}>×</button></header>
-      <div className="element-library-tools"><label className="search-box"><span aria-hidden="true">⌕</span><input type="search" aria-label="Pretraži biblioteku" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Traži naziv fajla ili folder…" /></label><button className="secondary-button" onClick={onChooseFolder}>Promijeni folder</button></div>
+      <div className="element-library-tools"><div className="library-kind-switch" aria-label="Vrsta biblioteke"><button className={kind==="elements"?"active":""} aria-pressed={kind==="elements"} onClick={()=>onKindChange("elements")}>Elementi</button><button className={kind==="hardware"?"active":""} aria-pressed={kind==="hardware"} onClick={()=>onKindChange("hardware")}>Okovi</button></div><label className="search-box"><span aria-hidden="true">⌕</span><input type="search" aria-label="Pretraži biblioteku" value={query} onChange={(event) => {setQuery(event.target.value);setVisibleCount(48);setSelectedFile(null);}} placeholder="Traži u ovom folderu i podfolderima…" /></label><button className="secondary-button" onClick={onChooseFolder}>Uvezi drugi folder…</button></div>
       <div className="element-library-body">
-        <nav className="library-folders" aria-label="Folderi biblioteke"><button className={!folder ? "active" : ""} aria-current={!folder ? "true" : undefined} onClick={() => setFolder("")}>▦ Svi elementi <small>{files.length}</small></button>{folders.map((path) => <button key={path} className={folder === path ? "active" : ""} aria-current={folder === path ? "true" : undefined} title={path} style={{ paddingLeft: 12 + (path.split("/").length - 1) * 12 }} onClick={() => setFolder(path)}>▱ {path.split("/").at(-1)}</button>)}</nav>
-        <div className="library-choices"><div className="library-result-count">{matches.length} {matches.length === 1 ? "element" : "elemenata"}{matches.length > 200 ? " · prikazano prvih 200, suzi pretragu" : ""}</div><div className="library-list">{visibleFiles.map((file) => <button key={libraryFilePath(file)} className={activeFile === file ? "active" : ""} aria-pressed={activeFile === file} onClick={() => setSelectedFile(file)}><span><strong>{file.name.replace(/\.e3d$/i, "")}</strong><small>{libraryFilePath(file).split("/").slice(0, -1).join(" / ") || "Korijenski folder"}</small></span></button>)}{!visibleFiles.length && <p className="no-results">Nema elemenata. Promijeni pretragu ili folder.</p>}</div></div>
+        <LibraryFolderTree folders={folders} selected={folder} onSelect={chooseFolder}/>
+        <div className="library-choices"><div className="library-result-count"><button disabled={!folder} aria-label="Folder iznad" onClick={()=>chooseFolder(folder.includes("/")?folder.slice(0,folder.lastIndexOf("/")):"")}>↑</button><strong>{folder || (kind==="hardware"?"Okovi":"Elementi")}</strong><span>{matches.length} stavki · {subfolders.length} foldera</span></div><div className="library-card-grid">{subfolders.map(path=><button key={path} className="library-folder-card" onClick={()=>chooseFolder(path)}><span aria-hidden="true">▱</span><strong>{path.split("/").at(-1)}</strong></button>)}{visibleFiles.map(file=><LibraryElementCard key={libraryFilePath(file)} path={libraryFilePath(file)} name={file.name} pictures={pictures} active={activeFile===file} onSelect={()=>setSelectedFile(file)}/>)}{!visibleFiles.length&&!subfolders.length&&<p className="no-results">{allFiles.length?"Nema rezultata u ovom folderu.":"Lokalna biblioteka se učitava ili nije dostupna. Možeš uvesti drugi folder."}</p>}{matches.length>visibleCount&&<button className="library-load-more secondary-button" onClick={()=>setVisibleCount(count=>count+48)}>Prikaži još ({matches.length-visibleCount})</button>}</div></div>
         <section className="library-preview" aria-label="Pregled izabranog elementa" aria-busy={Boolean(activeFile && !current)}>
           {current?.element ? <><div className="library-preview-title"><h3>{current.element.name || activeFile?.name}</h3><span>{current.element.code || "Bez šifre"}</span></div><Suspense fallback={<div className="element-preview-loading">Pripremam 3D pregled…</div>}><Element3DPreview key={libraryFilePath(current.file)} element={displayElement!} selectedBoardIndex={previewBoardIndex} onSelectBoard={setPreviewBoardIndex} /></Suspense><div className="library-insert-dimensions">{([["width","Širina"],["height","Visina"],["depth","Dubina"]] as const).map(([key,label])=><label key={key}>{label}<div><input aria-label={`${label} prije umetanja`} inputMode="decimal" value={dimensionValues[key]} onChange={event=>setDimensionDraft({file:current.file,values:{...dimensionValues,[key]:event.target.value}})}/><small>mm</small></div></label>)}</div><button className="secondary-button" disabled={!dimensionDraft||dimensionDraft.file!==current.file} onClick={()=>setDimensionDraft(null)}>Vrati izvorne mjere</button><p className="library-preview-help">Mišem okreni pregled, točkićem približi. Promjena mjera računa postojeće formule; dijelovi bez izraza zadržavaju mjere. Bibliotečki fajl ostaje sačuvan.</p>{prepared?.error?<div className="library-resize-error" role="alert"><p>{prepared.error}</p>{prepared.issues.length>0&&<details><summary>Prikaži neriješene izraze ({prepared.issues.length})</summary><ul>{prepared.issues.map(issue=><li key={`${issue.elementPath.join(".")}:${issue.boardIndex}:${issue.field}`}><strong>{issue.elementName} / {issue.boardName??"Element"} · {issue.field}</strong><code>{issue.expression}</code></li>)}</ul></details>}</div>:prepared?.value?.changed?<p className="library-resize-state" role="status">Pregled je preračunat za nove mjere. Umetanje koristi ovu E3D kopiju.</p>:null}</> : current?.error ? <div className="library-preview-empty" role="alert"><strong>Pregled nije dostupan</strong><p>{current.error}</p><small>Izaberi drugi element.</small></div> : <div className="library-preview-empty"><strong>{activeFile ? "Učitavam element…" : "Izaberi element iz biblioteke"}</strong><p>Pregled ne dodaje element u projekat.</p></div>}
         </section>

@@ -239,3 +239,47 @@
 .group-variable-preview ul { padding-left:16px; }
 .group-variable-preview li { margin:6px 0; }
 .group-variable-preview li > span { display:block; margin:4px 0; }
+
+/* Vizuelni lokalni izbor elemenata i okova. */
+.desktop-window.visual-library-window { width:min(1250px,calc(100% - 24px));height:min(800px,calc(100% - 24px)); }
+.desktop-window.visual-library-window .element-library-dialog { grid-template-rows:auto minmax(0,1fr) auto; }
+.visual-library-window .element-library-tools { padding:10px;gap:10px;background:#e9f0f5; }
+.visual-library-window .element-library-body { grid-template-columns:210px minmax(210px,1fr) minmax(280px,36%); }
+.library-kind-switch { display:flex;gap:2px; }
+.library-kind-switch button { padding:8px 12px;border:1px solid #a9bdcb;background:#f5f8fa;color:#34546c; }
+.library-kind-switch button.active { background:#d0e5f5;border-color:#648fae;font-weight:700; }
+.visual-library-window .library-tree-row { display:flex;align-items:center; }
+.visual-library-window .library-tree-row > button:last-child { min-width:0;flex:1;padding:8px 4px; }
+.visual-library-window .library-tree-toggle { width:22px;flex:none;padding:8px 0;text-align:center; }
+.library-tree-spacer { width:22px;flex:none; }
+.visual-library-window .library-folders { background:#f1f5f8; }
+.visual-library-window .library-folders button.active { background:#d1e6f7;color:#224d6b; }
+.visual-library-window .library-result-count { display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px;color:#34546c;overflow-wrap:anywhere; }
+.library-result-count strong { flex:1;min-width:0;font-size:11px; }
+.library-result-count > span { width:100%;font-size:10px;color:#698093; }
+.library-card-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(115px,1fr));align-content:start;gap:8px;padding:10px;min-height:0;overflow:auto; }
+.library-card-grid > button { display:flex;flex-direction:column;align-items:stretch;min-width:0;border:1px solid #d6e0e7;border-radius:4px;padding:5px;background:white;text-align:center;color:#334e62;cursor:pointer; }
+.library-card-grid > button:hover { border-color:#6e9dbd;background:#f0f7fc; }
+.library-card-grid > button.active { border:2px solid #4387b6;padding:4px;background:#e4f1fb; }
+.library-card-grid strong { font-size:11px;line-height:1.4;overflow-wrap:anywhere;padding:5px 2px;font-weight:500; }
+.library-card-picture { height:100px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden; }
+.library-card-picture img { width:100%;height:100%;object-fit:contain; }
+.library-card-placeholder { font-size:44px;color:#8aa5ba; }.library-card-placeholder small { display:block;font-size:10px; }
+.library-folder-card > span { height:65px;color:#b78c38;font-size:54px;line-height:65px; }
+.library-load-more { grid-column:1/-1; }
+.visual-library-window .library-preview { padding:12px;background:#f8fafc; }
+@media(max-width:850px) { .visual-library-window .element-library-body { grid-template-columns:150px minmax(170px,1fr) minmax(220px,35%); } }
+@media(max-width:640px) { .visual-library-window .element-library-body { grid-template-columns:120px minmax(0,1fr);grid-template-rows:minmax(200px,1fr) minmax(250px,1fr);overflow:auto; }.visual-library-window .library-folders { grid-column:1;grid-row:1/3; }.visual-library-window .library-choices { grid-column:2;grid-row:1; }.visual-library-window .library-preview { grid-column:2;grid-row:2; }.visual-library-window .element-library-tools { flex-wrap:wrap; }.visual-library-window .element-library-tools .search-box { flex-basis:100%;order:3; } }
+
+.gola-tool-symbol { display:block;width:28px;height:28px;line-height:28px;border-radius:5px;color:#2d6c52;font-size:26px;font-weight:750;font-family:Segoe UI,sans-serif; }
+
+.desktop-window.gola-cuts-window { width:min(1080px,calc(100% - 24px));height:min(800px,calc(100% - 24px)); }
+.gola-cuts-dialog { height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto auto;color:#36536a; }
+.gola-cuts-heading { display:flex;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid #bdcdd8;background:#e5edf4;font-size:13px; }
+.gola-cuts-heading span { color:#6c8394;font-size:11px; }
+.gola-cuts-body { display:grid;grid-template-columns:minmax(220px,40%) minmax(0,1fr);min-height:0; }
+.gola-cuts-side { padding:12px;overflow:auto;border-right:1px solid #bdcdd8;min-width:0; }.gola-cuts-side h3 { margin:0 0 8px;font-size:12px; }.gola-board-list { max-height:150px;overflow:auto;display:grid;gap:5px;font-size:11px;margin-bottom:12px; }.gola-board-list label { display:flex;align-items:center;gap:8px; }.gola-cuts-side .element-preview { min-height:240px; }.gola-cuts-side p,.gola-position-help { font-size:11px;line-height:1.5;color:#6c8394; }
+.gola-cut-rows { overflow:auto;padding:10px; }.gola-cut-rows fieldset { margin:0 0 10px;padding:10px;border:1px solid #c3d0da;background:#edf2f6; }.gola-cut-rows fieldset.enabled { background:#e0edf7;border-color:#8eafc7; }.gola-cut-rows legend { padding:0 6px;font-size:12px;font-weight:600; }.gola-cut-rows legend label { display:flex;align-items:center;gap:8px; }.gola-row-fields { display:grid;grid-template-columns:1fr 1fr;gap:8px 14px; }.gola-row-fields label { display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px; }.gola-row-fields input { width:85px;padding:6px;border:1px solid #aabfce;background:white; }.gola-row-fields input:disabled { background:#edf0f2;color:#8b9ca7; }.gola-cuts-message { padding:10px 14px;font-size:12px;border-top:1px solid #c3d0da;background:#f0f5f8; }.gola-cuts-dialog footer { display:flex;justify-content:flex-end;gap:10px;padding:12px; }.gola-cuts-dialog button:disabled { opacity:.45;cursor:default; }
+@media(max-width:700px) { .gola-cuts-body { grid-template-columns:1fr;overflow:auto; }.gola-cuts-side { overflow:visible; }.gola-cut-rows { overflow:visible; } }
+
+.gola-preview-switch { display:flex;gap:5px;margin-bottom:8px; }.gola-preview-switch button { padding:6px 10px;border:1px solid #aabfce;background:#f5f8fa;color:#36536a;font-size:11px; }.gola-preview-switch button.active { background:#d4e7f5; }.gola-side-preview { display:block;width:100%;height:300px;background:#fff;border:1px solid #c3d0da; }

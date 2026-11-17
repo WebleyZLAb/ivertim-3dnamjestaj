@@ -64,7 +64,8 @@ export function expandCorpusCurve(
     const next = source[(index + 1) % count]!;
     const afterNext = source[(index + 2) % count]!;
     result.push(current);
-    if (current.style === 0 && next.style === 0) continue;
+    // A radius belongs to the outgoing segment; the straight segment entering it must not become a spline.
+    if (current.style === 0 && (next.style === 0 || (next.style === 2 && typeof next.arcRadius === "number" && next.arcRadius > 0))) continue;
     if (current.style === 2 && typeof current.arcRadius === "number" && current.arcRadius > 0) {
       const arc = circularArc(current, next, current.arcRadius, current.arcSmooth === 0 ? -1 : 1, subdivisions);
       if (arc) {

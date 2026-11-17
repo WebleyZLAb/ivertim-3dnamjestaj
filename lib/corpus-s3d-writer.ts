@@ -1093,3 +1093,37 @@ function serializeHole(hole: CorpusS3dHole): string {
 function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\r", "&#13;").replaceAll("\n", "&#10;").replaceAll("\t", "&#9;");
 }
+
+/** Exact contour patch with a recoverable, tool-owned baseline. Other board data stays opaque. */
+export function writeCorpusGolaContour(xml: string, boardIndex: number, curveXml: string | null, elementPath: readonly number[] = [0], settings = ""): string {
+  const { boards } = findRootBoardFragments(xml, elementPath);
+  const board = boards[boardIndex];
+  if (!board) throw new Error("Stranica nije pronađena.");
+  const fragment = xml.slice(board.start,board.end);
+  const children = directXmlChildren(fragment);
+  const curves = children.filter(child=>child.name === "KRIVULJE");
+  const markers = children.filter(child=>child.name === "IVERTIM_GOLA");
+  if(curves.length>1 || markers.length>1) throw new Error("Stranica ima dvosmislen zapis konture.");
+  const curve = curves[0], marker = markers[0];
+  if (!curveXml && !marker) return xml;
+  const read = (name:string) => marker ? decodeXmlAttribute(xmlAttribute(marker.raw,name) ?? "") : "";
+  const opening = scanXmlTags(fragment).find(token=>!token.closing && token.name==="AD")!;
+  if(marker && (curve?.raw !== read("APPLIED") || xmlAttribute(opening.raw,"VISINA") !== read("HEIGHT") || xmlAttribute(opening.raw,"DUBINA") !== read("WIDTH"))) throw new Error("Kontura ili mjere su mijenjane poslije Gola usijecanja. Prvo vrati tu izmjenu komandom Poništi.");
+  const original = marker ? read("ORIGINAL") : curve?.raw ?? "";
+  const nextCurve = curveXml ?? original;
+  const nextMarker = curveXml ? `<IVERTIM_GOLA VERSION="1" SETTINGS="${escapeXmlAttribute(settings)}" ORIGINAL="${escapeXmlAttribute(original)}" APPLIED="${escapeXmlAttribute(curveXml)}" HEIGHT="${escapeXmlAttribute(xmlAttribute(opening.raw,"VISINA")??"")}" WIDTH="${escapeXmlAttribute(xmlAttribute(opening.raw,"DUBINA")??"")}"/>` : "";
+  const replacements = [curve,marker].filter((entry):entry is NonNullable<typeof entry>=>Boolean(entry)).sort((a,b)=>b.start-a.start);
+  let output = fragment;
+  for(const item of replacements) output=output.slice(0,item.start)+output.slice(item.end);
+  const tokens = scanXmlTags(output);
+  const start = tokens.find(token=>!token.closing && token.name==="AD")!;
+  if(start.selfClosing) output=output.slice(0,start.start)+start.raw.replace(/\/\s*>$/,">")+nextCurve+nextMarker+"</AD>"+output.slice(start.end);
+  else { const end=[...tokens].reverse().find(token=>token.closing && token.name==="AD")!; output=output.slice(0,end.start)+nextCurve+nextMarker+output.slice(end.start); }
+  return xml.slice(0,board.start)+output+xml.slice(board.end);
+}
+
+export function readCorpusGolaSettings(xml:string,boardIndex:number,elementPath:readonly number[]=[0]):string|null {
+ const board=findRootBoardFragments(xml,elementPath).boards[boardIndex];if(!board)return null;
+ const marker=directXmlChildren(xml.slice(board.start,board.end)).find(child=>child.name==="IVERTIM_GOLA");
+ const value=marker?xmlAttribute(marker.raw,"SETTINGS"):null;return value?decodeXmlAttribute(value):null;
+}
