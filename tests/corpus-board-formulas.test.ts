@@ -96,3 +96,25 @@ test("promjena varijable dubokog podelementa osvježava njegovu ploču u punom k
  assert.equal(next.variables.GAP,"4");
  assert.equal(next.children[1]!.variables.GAP,"10");
 });
+
+test("removing a multiline source formula preserves saved geometry and opaque XML", () => {
+ const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="A" DXPOS="25" XF="10 +
+15" CUSTOM="keep"><OPAQUE DATA="untouched"/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+ const output = replaceCorpusE3dBoardFormulas(source, 0, { XF: "" });
+ const board = parseCorpusE3d(output).elements[0]!.boards[0]!;
+ assert.equal(board.formulas?.XF, undefined);
+ assert.equal(board.position[0], 25);
+ assert.match(output, /CUSTOM="keep"/);
+ assert.match(output, /<OPAQUE DATA="untouched"\/>/);
+});
+
+test("replacing a multiline formula updates its attribute once and preserves neighboring data", () => {
+ for (const quote of ['"', "'"]) {
+  const source = `<ELEMENTFILE><ELEMENT><DASKE><AD DNAME="A" DXPOS="25" XF=${quote}10 +\n15${quote} CUSTOM="keep"><OPAQUE DATA="untouched"/></AD></DASKE></ELEMENT></ELEMENTFILE>`;
+  const output = replaceCorpusE3dBoardFormulas(source, 0, { XF: "30+2" });
+  assert.equal((output.match(/\sXF\s*=/g) ?? []).length, 1);
+  assert.equal(parseCorpusE3d(output).elements[0]!.boards[0]!.formulas?.XF, "30+2");
+  assert.match(output, /CUSTOM="keep"/);
+  assert.match(output, /<OPAQUE DATA="untouched"\/>/);
+ }
+});

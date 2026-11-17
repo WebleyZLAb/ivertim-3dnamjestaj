@@ -77,7 +77,7 @@ test("mijenja ploču, izvozi je u radnu kopiju verzije 10 i ponovo je učitava",
   assert.equal(changed.updatedElement!.boards[0]!.width, 510);
 
   const sidecar = createCorpusWorkingCopyFile("ploca.s3d", project.elements, changed.elements, "2026-10-18T09:00:00.000Z");
-  assert.equal(sidecar.version, 10);
+  assert.equal(sidecar.version, 11);
   assert.equal(sidecar.boardChanges.length, 1);
   assert.deepEqual(sidecar.boardChanges[0]!.elementPath, [0]);
   const imported = applyCorpusWorkingCopyFile("ploca.s3d", project.elements, sidecar);
@@ -91,7 +91,7 @@ test("čuva dodani E3D element u radnoj kopiji verzije 10", () => {
   const sidecar = createCorpusWorkingCopyFile("kuhinja.s3d", project.elements, project.elements, undefined, undefined, [{ sourceFile: "D1V.E3D", sourceXml }]);
   const imported = applyCorpusWorkingCopyProject("kuhinja.s3d", project.elements, project.room, sidecar);
 
-  assert.equal(sidecar.version, 10);
+  assert.equal(sidecar.version, 11);
   assert.equal(sidecar.imports.length, 1);
   assert.equal(imported.elements.length, 2);
   assert.equal(imported.elements[1]!.name, "D1V");
@@ -108,7 +108,7 @@ test("radna kopija verzije 10 čuva punu strukturu samostalnog E3D-a", () => {
   const sidecar = createCorpusWorkingCopyFile("samostalni.E3D", original.elements, changed.elements, undefined, undefined, [], { sourceFile: "samostalni.E3D", sourceXml: changedXml });
   const restored = applyCorpusWorkingCopyProject("SAMOSTALNI.e3d", original.elements, original.room, sidecar);
 
-  assert.equal(sidecar.version, 10);
+  assert.equal(sidecar.version, 11);
   assert.equal(sidecar.changes.length, 0);
   assert.equal(restored.elements[0]!.boards.length, 2);
   assert.equal(restored.elements[0]!.boards[1]!.name, "Druga");
@@ -121,7 +121,7 @@ test("čuva izmjenu postojećih EVAR vrijednosti u radnoj kopiji verzije 10", ()
   const changed = updateCorpusElementVariables(project.elements, project.elements[0]!, { VISINA: "120", TIP: "IF(VISINA>60;2;0)" });
   const sidecar = createCorpusWorkingCopyFile("varijable.s3d", project.elements, changed.elements);
 
-  assert.equal(sidecar.version, 10);
+  assert.equal(sidecar.version, 11);
   assert.deepEqual(sidecar.elementVariableChanges, [{ path: [0], before: { VISINA: "100", TIP: "IF(VISINA>50;1;0)" }, after: { VISINA: "120", TIP: "IF(VISINA>60;2;0)" } }]);
   const restored = applyCorpusWorkingCopyFile("varijable.s3d", project.elements, sidecar);
   assert.deepEqual(restored[0]!.variables, { VISINA: "120", TIP: "IF(VISINA>60;2;0)" });
@@ -262,4 +262,27 @@ test("dvosmislena stara radna kopija ne pridruzuje nepoznate podatke pogresnoj r
   for (const change of legacy.boardHolesChanges) for (const hole of [...change.before,...change.after]) delete hole.sourceIndex;
   assert.throws(()=>applyCorpusWorkingCopyFile("legacy.s3d",project.elements,legacy), /bez jednoznačnog izvora/);
   assert.equal(project.elements[0]!.boards[0]!.holes[0]!.name,"A");
+});
+
+test("combined rename, code and geometry edits survive JSON working-copy recovery at root and child paths", () => {
+ const source = `<PROJECTFILE><ELEMENT ENAME="Root" ESIFRA="R1" EXPOX="0" EYPOS="0" EZPOS="0" ESIRINA="600" EVISINA="720" EDUBINA="560" EKUT="0" EXKUT="0" EZKUT="0" EVISIBLE="true" EEDITABLE="true" ELOCKED="false"><ELMLIST><ELM ENAME="Child" ESIFRA="C1" EXPOX="0" EYPOS="0" EZPOS="0" ESIRINA="100" EVISINA="100" EDUBINA="100" EKUT="0" EXKUT="0" EZKUT="0" EVISIBLE="true" EEDITABLE="true" ELOCKED="false"/></ELMLIST></ELEMENT></PROJECTFILE>`;
+ const project = parseCorpusS3d(source);
+ for (const path of [[0], [0,0]]) {
+  const target = corpusElementAtPath(project.elements, path)!;
+  const moved = updateCorpusElement(project.elements, target, {position:[10,20,30], width:650, height:800, depth:580, angle:0});
+  const renamed = updateCorpusElementIdentity(moved.elements, moved.updated!, {...moved.updated!,name:"Renamed",code:"New-code"});
+  const copy = createCorpusWorkingCopyFile("rename.s3d", project.elements, renamed.elements);
+  const restored = applyCorpusWorkingCopyFile("rename.s3d", project.elements, JSON.parse(JSON.stringify(copy)));
+  assert.deepEqual(restored, renamed.elements);
+  const legacy = JSON.parse(JSON.stringify(copy));
+  legacy.changes[0].name = "Renamed";
+  legacy.changes[0].code = "New-code";
+  assert.deepEqual(applyCorpusWorkingCopyFile("rename.s3d", project.elements, legacy), renamed.elements);
+  const stale = parseCorpusS3d(source.replace(path.length === 1 ? 'ENAME="Root"' : 'ENAME="Child"', 'ENAME="Unrelated"'));
+  assert.throws(() => applyCorpusWorkingCopyFile("rename.s3d", stale.elements, copy), /razlikuje od projekta/);
+  assert.throws(() => applyCorpusWorkingCopyFile("rename.s3d", stale.elements, legacy), /razlikuje od projekta/);
+  const wrongGeometry = structuredClone(project.elements);
+  corpusElementAtPath(wrongGeometry, path)!.width = 999;
+  assert.throws(() => applyCorpusWorkingCopyFile("rename.s3d", wrongGeometry, legacy), /razlikuje od projekta/);
+ }
 });

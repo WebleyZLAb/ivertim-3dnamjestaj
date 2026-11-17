@@ -1,3 +1,4 @@
+import { validateStraightContour } from "./corpus-contour.ts";
 import type { CorpusS3dElement, CorpusS3dHole, CorpusS3dRoom } from "./corpus-s3d.ts";
 import { createCorpusWorkingCopyFile } from "./corpus-model.ts";
 
@@ -26,7 +27,7 @@ export function writeCorpusS3dGeometryCopy(
   const roomChange = workingCopy.roomChange;
   const elementIdentityChanges = workingCopy.elementIdentityChanges;
   const elementVariableChanges = workingCopy.elementVariableChanges;
-  if (!changes.length && !boardChanges.length && !boardFormulaChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length && !elementVariableChanges.length) return xml;
+  if (!changes.length && !boardChanges.length && !boardFormulaChanges.length && !workingCopy.boardContourChanges.length && !boardAppearanceChanges.length && !boardHolesChanges.length && !roomChange && !elementIdentityChanges.length && !elementVariableChanges.length) return xml;
 
   const byPath = new Map(changes.map((change) => [change.path.join("."), change.after]));
   const formulasByPath = new Map(boardFormulaChanges.map(change => [`${change.elementPath.join(".")}:${change.boardIndex}`,change]));
@@ -35,7 +36,7 @@ export function writeCorpusS3dGeometryCopy(
   const boardHolesByPath = new Map(boardHolesChanges.map((change) => [`${change.elementPath.join(".")}:${change.boardIndex}`, change]));
   const identitiesByPath = new Map(elementIdentityChanges.map((change) => [change.path.join("."), change]));
   const variablesByPath = new Map(elementVariableChanges.map((change) => [change.path.join("."), change]));
-  const tags = scanXmlTags(xml);
+  const tags = scanCorpusXmlTags(xml);
   const replacements: Array<{ start: number; end: number; value: string }> = [];
   const foundPaths = new Set<string>();
   const foundBoardPaths = new Set<string>();
@@ -123,7 +124,7 @@ export function writeCorpusS3dGeometryCopy(
             if (formulaChange.before[key] === formulaChange.after[key]) continue;
             const expression = formulaChange.after[key];
             if (expression?.trim()) value = setXmlAttribute(value,key,escapeXmlAttribute(expression).replaceAll("'","&apos;"));
-            else value = value.replace(new RegExp(`\\s${key}\\s*=\\s*(["']).*?\\1`,"i"),"");
+            else value = removeXmlAttribute(value, key);
           }
         }
         if (appearance) {
@@ -221,6 +222,10 @@ export function writeCorpusS3dGeometryCopy(
   for (const replacement of replacements.sort((a, b) => b.start - a.start)) {
     output = output.slice(0, replacement.start) + replacement.value + output.slice(replacement.end);
   }
+  for (const change of workingCopy.boardContourChanges) {
+    if (change.after.some(point => point.style !== 0 || point.previousControl !== null || point.nextControl !== null || point.arcRadius !== null || point.arcSmooth !== null)) throw new Error("Upis podržava samo konture ravnih segmenata.");
+    output = replaceCorpusE3dBoardContour(output, change.boardIndex, change.after, change.elementPath, true);
+  }
   return output;
 }
 
@@ -285,7 +290,7 @@ export function replaceCorpusE3dElementVariables(
   }
   validateVariableEntries(variables);
   const targetKey = elementPath.join(".");
-  const tags = scanXmlTags(xml);
+  const tags = scanCorpusXmlTags(xml);
   const stack: Array<{ tag: "ELEMENT" | "ELM"; path: number[]; nextChild: number }> = [];
   let nextRoot = 0;
   let targetOpening: XmlTagToken | null = null;
@@ -524,7 +529,7 @@ export function replaceCorpusE3dBoardIdentity(xml: string, boardIndex: number, n
 }
 
 /** Zamjenjuje KRIVULJE izabrane E3D ploče provjerenom zatvorenom konturom ravnih segmenata. */
-export function replaceCorpusE3dBoardContour(xml: string, boardIndex: number, points: readonly CorpusStraightContourPoint[], elementPath: readonly number[] = [0]): string {
+export function replaceCorpusE3dBoardContour(xml: string, boardIndex: number, points: readonly CorpusStraightContourPoint[], elementPath: readonly number[] = [0], preserveSourceData = false): string {
   if (!Number.isInteger(boardIndex) || boardIndex < 0) throw new Error("Indeks ploče nije ispravan.");
   validateStraightContour(points);
   const { boards } = findRootBoardFragments(xml, elementPath);
@@ -534,17 +539,27 @@ export function replaceCorpusE3dBoardContour(xml: string, boardIndex: number, po
   const tags = scanXmlTags(fragment);
   const opening = tags.find((token) => !token.closing && token.name === "AD");
   if (!opening) throw new Error(`Početak ploče ${boardIndex} nije pronađen.`);
-  const curveOpeningIndex = tags.findIndex((token) => !token.closing && token.name === "KRIVULJE");
+  const curveChild = directXmlChildren(fragment).find(child => child.name === "KRIVULJE");
+  const curveOpeningIndex = curveChild ? tags.findIndex(token => token.start === curveChild.start) : -1;
   const curveXml = serializeStraightContour(points);
   let nextFragment: string;
-  if (curveOpeningIndex >= 0) {
+  if (preserveSourceData) {
+    if (curveOpeningIndex < 0) throw new Error("Izvorna kontura za obnovu nije pronađena.");
     const curveOpening = tags[curveOpeningIndex]!;
-    if (curveOpening.selfClosing) nextFragment = fragment.slice(0, curveOpening.start) + curveXml + fragment.slice(curveOpening.end);
-    else {
-      const curveClosing = tags.find((token, index) => index > curveOpeningIndex && token.closing && token.name === "KRIVULJE");
-      if (!curveClosing) throw new Error(`KRIVULJE sekcija ploče ${boardIndex} nije zatvorena.`);
-      nextFragment = fragment.slice(0, curveOpening.start) + curveXml + fragment.slice(curveClosing.end);
-    }
+    const data = xmlAttribute(curveOpening.raw,"DATA");
+    if (data === null) throw new Error("Izvorna kontura nema zapis koordinata.");
+    const counts = { X: 0, Z: 0 };
+    const updated = data.replace(/((?:&quot;|&#34;|&#x22;|")PT([XZ])=)(.*?)(?=&quot;|&#34;|&#x22;|")/gi, (_match, prefix: string, rawAxis: string) => {
+      const axis = rawAxis.toUpperCase() as "X" | "Z";
+      const point = points[counts[axis]++];
+      if (!point) throw new Error("Broj koordinata izvorne konture se razlikuje od obnovljene.");
+      return prefix + formatS3dNumber((axis === "X" ? point.x : point.z) / 1000);
+    });
+    if (counts.X !== points.length || counts.Z !== points.length) throw new Error("Broj koordinata izvorne konture se razlikuje od obnovljene.");
+    const curveTag = setXmlAttribute(curveOpening.raw,"DATA",updated);
+    nextFragment = fragment.slice(0,curveOpening.start) + curveTag + fragment.slice(curveOpening.end);
+  } else if (curveOpeningIndex >= 0) {
+    nextFragment = fragment.slice(0, curveChild!.start) + curveXml + fragment.slice(curveChild!.end);
   } else {
     const closing = [...tags].reverse().find((token) => token.closing && token.name === "AD");
     if (!closing) throw new Error(`Ploča ${boardIndex} nema mjesto za KRIVULJE sekciju.`);
@@ -570,45 +585,34 @@ export function replaceCorpusE3dBoardEdgeBanding(xml: string, boardIndex: number
   const board = boards[boardIndex];
   if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena u E3D elementu.`);
   const fragment = xml.slice(board.start, board.end);
-  const tags = scanXmlTags(fragment);
-  const containerIndex = tags.findIndex((token) => !token.closing && token.name === "POTROSNI");
+  const children = directXmlChildren(fragment);
+  const container = children.find(child => child.name === "POTROSNI");
   const edgeItem = spec.sides.some(Boolean) ? serializeEdgeBanding(spec) : "";
   let nextFragment: string;
-  if (containerIndex >= 0) {
-    const opening = tags[containerIndex]!;
+  if (container) {
+    const tags = scanXmlTags(container.raw);
+    const opening = tags[0]!;
+    let replacement: string;
     if (opening.selfClosing) {
-      const replacement = edgeItem ? `<POTROSNI COUNT="1">${edgeItem}</POTROSNI>` : `<POTROSNI COUNT="0"/>`;
-      nextFragment = fragment.slice(0, opening.start) + replacement + fragment.slice(opening.end);
+      const updatedOpening = setXmlAttribute(opening.raw, "COUNT", edgeItem ? "1" : "0");
+      replacement = edgeItem ? updatedOpening.replace(/\/\s*>$/, ">") + edgeItem + "</POTROSNI>" : updatedOpening;
     } else {
-      const closing = tags.find((token, index) => index > containerIndex && token.closing && token.name === "POTROSNI");
-      if (!closing) throw new Error(`POTROSNI sekcija ploče ${boardIndex} nije zatvorena.`);
-      const content = fragment.slice(opening.end, closing.start);
-      const contentTags = scanXmlTags(content);
-      const removals: Array<{ start: number; end: number }> = [];
-      let retainedCount = 0;
-      for (let index = 0; index < contentTags.length; index += 1) {
-        const token = contentTags[index]!;
-        if (token.closing || token.name !== "POTITEM") continue;
-        const isEdge = xmlAttribute(token.raw, "TIP") === "0";
-        if (!isEdge) { retainedCount += 1; continue; }
-        if (token.selfClosing) removals.push({ start: token.start, end: token.end });
-        else {
-          const end = contentTags.find((candidate, candidateIndex) => candidateIndex > index && candidate.closing && candidate.name === "POTITEM");
-          if (!end) throw new Error("POTITEM rubne obrade nije zatvoren.");
-          removals.push({ start: token.start, end: end.end });
-        }
-      }
-      let retained = content;
-      for (const removal of removals.sort((a, b) => b.start - a.start)) retained = retained.slice(0, removal.start) + retained.slice(removal.end);
-      const updatedOpening = setXmlAttribute(opening.raw, "COUNT", String(retainedCount + (edgeItem ? 1 : 0)));
-      nextFragment = fragment.slice(0, opening.start) + updatedOpening + retained + edgeItem + fragment.slice(closing.start);
+      const closing = tags.at(-1)!;
+      if (!closing.closing || closing.name !== "POTROSNI") throw new Error(`POTROSNI sekcija ploče ${boardIndex} nije zatvorena.`);
+      let content = container.raw.slice(opening.end, closing.start);
+      const items = directXmlChildren(container.raw).filter(child => child.name === "POTITEM");
+      const removals = items.filter(item => xmlAttribute(scanXmlTags(item.raw)[0]!.raw, "TIP") === "0");
+      for (const item of [...removals].reverse()) content = content.slice(0, item.start - opening.end) + content.slice(item.end - opening.end);
+      const count = items.length - removals.length + (edgeItem ? 1 : 0);
+      replacement = setXmlAttribute(opening.raw, "COUNT", String(count)) + content + edgeItem + closing.raw;
     }
+    nextFragment = fragment.slice(0, container.start) + replacement + fragment.slice(container.end);
   } else {
     if (!edgeItem) return xml;
-    const insertBefore = tags.find((token) => !token.closing && token.name === "RUPE")
-      ?? [...tags].reverse().find((token) => token.closing && token.name === "AD");
-    if (!insertBefore) throw new Error(`Ploča ${boardIndex} nema mjesto za POTROSNI sekciju.`);
-    nextFragment = fragment.slice(0, insertBefore.start) + `<POTROSNI COUNT="1">${edgeItem}</POTROSNI>` + fragment.slice(insertBefore.start);
+    const insertBefore = children.find(child => child.name === "RUPE")?.start
+      ?? [...scanXmlTags(fragment)].reverse().find(token => token.closing && token.name === "AD")?.start;
+    if (insertBefore === undefined) throw new Error(`Ploča ${boardIndex} nema mjesto za POTROSNI sekciju.`);
+    nextFragment = fragment.slice(0, insertBefore) + `<POTROSNI COUNT="1">${edgeItem}</POTROSNI>` + fragment.slice(insertBefore);
   }
   return xml.slice(0, board.start) + nextFragment + xml.slice(board.end);
 }
@@ -624,7 +628,7 @@ export function replaceCorpusE3dBoardFormulas(xml: string, boardIndex: number, p
   let tag=token.raw;
   for(const [key,value] of Object.entries(patch)) {
     if(value.trim()) tag=setXmlAttribute(tag,key,escapeXmlAttribute(value.trim()));
-    else tag=tag.replace(new RegExp(`\\s${key}\\s*=\\s*(["']).*?\\1`,"i"),"");
+    else tag = removeXmlAttribute(tag, key);
   }
   return xml.slice(0,token.start)+tag+xml.slice(token.end);
 }
@@ -732,8 +736,32 @@ function scanXmlTags(xml: string): XmlTagToken[] {
   return result;
 }
 
+/** Match only the structural locations the S3D/E3D parser reads; opaque branches remain opaque. */
+function scanCorpusXmlTags(xml: string): XmlTagToken[] {
+  const stack: string[] = [];
+  const insideElement = (ancestors: readonly string[]) => {
+    if (ancestors.length < 2 || ancestors.length % 2 !== 0 || !["PROJECTFILE", "ELEMENTFILE"].includes(ancestors[0]!) || ancestors[1] !== "ELEMENT") return false;
+    for (let index = 2; index < ancestors.length; index += 2) if (ancestors[index] !== "ELMLIST" || ancestors[index + 1] !== "ELM") return false;
+    return true;
+  };
+  return scanXmlTags(xml).filter(token => {
+    if (token.closing) stack.pop();
+    let included = true;
+    switch (token.name) {
+      case "ELEMENT": included = stack.length === 1 && ["PROJECTFILE", "ELEMENTFILE"].includes(stack[0]!); break;
+      case "ELM": included = stack.at(-1) === "ELMLIST" && insideElement(stack.slice(0, -1)); break;
+      case "EVAR": case "DASKE": included = insideElement(stack); break;
+      case "AD": included = stack.at(-1) === "DASKE" && insideElement(stack.slice(0, -1)); break;
+      case "RUPE": included = stack.at(-1) === "AD" && stack.at(-2) === "DASKE" && insideElement(stack.slice(0, -2)); break;
+      case "SOBA": included = stack.length === 1 && stack[0] === "PROJECTFILE"; break;
+    }
+    if (!token.closing && !token.selfClosing) stack.push(token.name);
+    return included;
+  });
+}
+
 function extractSingleRootElement(xml: string): string {
-  const tags = scanXmlTags(xml);
+  const tags = scanCorpusXmlTags(xml);
   const startIndex = tags.findIndex((token) => !token.closing && token.name === "ELEMENT");
   if (startIndex < 0) throw new Error("E3D nema korijenski ELEMENT za uvoz.");
   const start = tags[startIndex]!;
@@ -750,7 +778,7 @@ function extractSingleRootElement(xml: string): string {
 }
 
 function extractRootElementFragments(xml: string): string[] {
-  const tags = scanXmlTags(xml);
+  const tags = scanCorpusXmlTags(xml);
   const result: string[] = [];
   let depth = 0;
   let start: XmlTagToken | null = null;
@@ -780,7 +808,7 @@ function findRootBoardFragments(xml: string, elementPath: readonly number[] = [0
   closing: XmlTagToken | null;
 } {
   if (!elementPath.length || elementPath.some(part => !Number.isInteger(part) || part < 0)) throw new Error("Putanja E3D elementa nije ispravna.");
-  const tags = scanXmlTags(xml);
+  const tags = scanCorpusXmlTags(xml);
   const stack: Array<{tag:string;path:number[];nextChild:number}> = [];
   let nextRoot=0, containerIndex=-1;
   const key=elementPath.join('.');
@@ -826,38 +854,6 @@ function validateNewBoardSpec(spec: CorpusNewBoardSpec): void {
   if (!Number.isInteger(spec.color) || spec.color < 0 || spec.color > 0xffffff) throw new Error("Boja nove ploče nije valjana.");
 }
 
-function validateStraightContour(points: readonly CorpusStraightContourPoint[]): void {
-  if (points.length < 3) throw new Error("Kontura mora imati najmanje tri tačke.");
-  if (points.length > 200) throw new Error("Kontura može imati najviše 200 tačaka.");
-  if (points.some(({ x, z }) => !Number.isFinite(x) || !Number.isFinite(z))) throw new Error("Sve tačke konture moraju sadržati konačne brojeve.");
-  const consecutive = points.some((point, index) => {
-    const next = points[(index + 1) % points.length]!;
-    return point.x === next.x && point.z === next.z;
-  });
-  if (consecutive) throw new Error("Kontura ne smije imati dvije uzastopne jednake tačke.");
-  for (let first = 0; first < points.length; first += 1) {
-    const firstNext = (first + 1) % points.length;
-    for (let second = first + 1; second < points.length; second += 1) {
-      const secondNext = (second + 1) % points.length;
-      if (first === second || firstNext === second || secondNext === first) continue;
-      if (segmentsIntersect(points[first]!, points[firstNext]!, points[second]!, points[secondNext]!)) {
-        throw new Error("Kontura ne smije presijecati samu sebe.");
-      }
-    }
-  }
-  const twiceArea = points.reduce((sum, point, index) => {
-    const next = points[(index + 1) % points.length]!;
-    return sum + point.x * next.z - next.x * point.z;
-  }, 0);
-  if (Math.abs(twiceArea) < 0.001) throw new Error("Kontura mora zatvarati površinu.");
-}
-
-function segmentsIntersect(a: CorpusStraightContourPoint, b: CorpusStraightContourPoint, c: CorpusStraightContourPoint, d: CorpusStraightContourPoint): boolean {
-  const cross = (p: CorpusStraightContourPoint, q: CorpusStraightContourPoint, r: CorpusStraightContourPoint) => (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x);
-  const abC = cross(a, b, c); const abD = cross(a, b, d); const cdA = cross(c, d, a); const cdB = cross(c, d, b);
-  return ((abC > 0 && abD < 0) || (abC < 0 && abD > 0)) && ((cdA > 0 && cdB < 0) || (cdA < 0 && cdB > 0));
-}
-
 function serializeStraightContour(points: readonly CorpusStraightContourPoint[]): string {
   const data = points.flatMap((point, index) => [
     `&quot;PTOCKA=${index}&quot;`, `&quot;PTSTYLE=0&quot;`, `&quot;PTX=${formatS3dNumber(point.x / 1000)}&quot;`, `&quot;PTZ=${formatS3dNumber(point.z / 1000)}&quot;`,
@@ -874,9 +870,23 @@ function serializeEdgeBanding(spec: CorpusEdgeBandingSpec): string {
   return `<POTITEM ${attributes.join(" ")}/>`;
 }
 
+type XmlAttributeToken = { name: string; value: string; quote: string; start: number; end: number; valueStart: number; valueEnd: number };
+
+/** Consume whole quoted attributes so attribute-like text inside values stays opaque. */
+function scanXmlAttributes(tag: string): XmlAttributeToken[] {
+  return [...tag.matchAll(/\s+([^\s=<>/"']+)\s*=\s*(["'])(.*?)\2/gs)].map(match => {
+    const valueStart = match.index + match[0].indexOf(match[2]!) + 1;
+    return { name: match[1]!, value: match[3]!, quote: match[2]!, start: match.index, end: match.index + match[0].length, valueStart, valueEnd: valueStart + match[3]!.length };
+  });
+}
+
 function xmlAttribute(tag: string, name: string): string | null {
-  const match = new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, "i").exec(tag);
-  return match?.[2] ?? null;
+  return scanXmlAttributes(tag).find(attribute => attribute.name.toUpperCase() === name.toUpperCase())?.value ?? null;
+}
+
+function removeXmlAttribute(tag: string, name: string): string {
+  const attribute = scanXmlAttributes(tag).find(attribute => attribute.name.toUpperCase() === name.toUpperCase());
+  return attribute ? tag.slice(0, attribute.start) + tag.slice(attribute.end) : tag;
 }
 
 function serializeNewBoard(spec: CorpusNewBoardSpec): string {
@@ -890,14 +900,13 @@ function serializeNewBoard(spec: CorpusNewBoardSpec): string {
 }
 
 function setXmlAttribute(tag: string, name: string, value: string): string {
-  const pattern = new RegExp(`(\\s${name}\\s*=\\s*)(["'])(.*?)\\2`, "i");
-  if (pattern.test(tag)) return tag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`);
+  const attribute = scanXmlAttributes(tag).find(entry => entry.name.toUpperCase() === name.toUpperCase());
+  if (attribute) {
+    const encoded = attribute.quote === "'" ? value.replaceAll("'", "&apos;") : value;
+    return tag.slice(0, attribute.valueStart) + encoded + tag.slice(attribute.valueEnd);
+  }
   const insertion = tag.match(/\/\s*>$/)?.index ?? tag.lastIndexOf(">");
   return `${tag.slice(0, insertion)} ${name}="${value}"${tag.slice(insertion)}`;
-}
-
-function removeXmlAttribute(tag: string, name: string): string {
-  return tag.replace(new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, "i"), "");
 }
 
 function replaceExistingElementVariables(
@@ -911,10 +920,10 @@ function replaceExistingElementVariables(
   if (JSON.stringify(beforeNames) !== JSON.stringify(afterNames)) {
     throw new Error(`EVAR ${path} smije mijenjati samo vrijednosti postojećih varijabli.`);
   }
-  const attributes = [...tag.matchAll(/\s(VAR\d+)\s*=\s*(["'])(.*?)\2/gi)].map((match) => {
-    const assignment = decodeXmlAttribute(match[3] ?? "");
+  const attributes = scanXmlAttributes(tag).filter(attribute => /^VAR\d+$/i.test(attribute.name)).map((attribute) => {
+    const assignment = decodeXmlAttribute(attribute.value);
     const separator = assignment.indexOf("=");
-    return { attribute: match[1]!, name: separator < 0 ? assignment : assignment.slice(0, separator), value: separator < 0 ? "" : assignment.slice(separator + 1) };
+    return { attribute: attribute.name, name: separator < 0 ? assignment : assignment.slice(0, separator), value: separator < 0 ? "" : assignment.slice(separator + 1) };
   });
   let output = tag;
   for (const name of beforeNames) {
@@ -928,17 +937,16 @@ function replaceExistingElementVariables(
 }
 
 function serializeElementVariables(variables: Readonly<Record<string, string>>, existingTag?: string): string {
-  if (existingTag) {
-    const existing = [...existingTag.matchAll(/\s(VAR\d+)\s*=\s*(["'])(.*?)\2/gi)];
-    const names = existing.map((match) => {
-      const assignment = decodeXmlAttribute(match[3] ?? "");
-      const separator = assignment.indexOf("=");
-      return separator < 0 ? assignment : assignment.slice(0, separator);
-    });
-    const duplicate = names.find((name, index) => names.indexOf(name) !== index);
-    if (duplicate) throw new Error(`Postojeća EVAR varijabla ${duplicate} nije jednoznačna.`);
-  }
-  let tag = existingTag?.replace(/\s+VAR\d+\s*=\s*(["'])(.*?)\1/gi, "") ?? "<EVAR/>";
+  const existing = existingTag ? scanXmlAttributes(existingTag).filter(attribute => /^VAR\d+$/i.test(attribute.name)) : [];
+  const names = existing.map(attribute => {
+    const assignment = decodeXmlAttribute(attribute.value);
+    const separator = assignment.indexOf("=");
+    return separator < 0 ? assignment : assignment.slice(0, separator);
+  });
+  const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+  if (duplicate) throw new Error(`Postojeća EVAR varijabla ${duplicate} nije jednoznačna.`);
+  let tag = existingTag ?? "<EVAR/>";
+  for (const attribute of [...existing].reverse()) tag = tag.slice(0, attribute.start) + tag.slice(attribute.end);
   Object.entries(variables).forEach(([name, expression], index) => {
     tag = setXmlAttribute(tag, `VAR${index}`, escapeXmlAttribute(`${name}=${expression}`));
   });
@@ -1050,7 +1058,7 @@ function serializeSourceHole(hole: CorpusS3dHole, before: CorpusS3dHole, source:
   for (const [attribute, field] of fields) {
     if (hole[field] === before[field]) continue;
     const value = hole[field];
-    tag = value === null ? tag.replace(new RegExp(`\\s${attribute}\\s*=\\s*(["'])(.*?)\\1`, "i"), "") : setXmlAttribute(tag, attribute, escapeXmlAttribute(String(value)));
+    tag = value === null ? removeXmlAttribute(tag, attribute) : setXmlAttribute(tag, attribute, escapeXmlAttribute(String(value)));
   }
   let result = tag + source.slice(opening.end);
   if (hole.machiningMode === before.machiningMode && JSON.stringify(hole.machining) === JSON.stringify(before.machining)) return result;

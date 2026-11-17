@@ -196,10 +196,27 @@ export function recalculateCorpusE3dVariables(xml:string, options: { rejectInval
    if(board.height===changed.height&&board.width===changed.width)return;
    if(changed.height===null||changed.width===null||changed.height<=0||changed.width<=0)return;
    if(corpusBoardHasRebuildableRectangle(board))
-     output=replaceCorpusE3dBoardContour(output,i,[{x:0,z:0},{x:changed.height,z:0},{x:changed.height,z:changed.width},{x:0,z:changed.width}],path);
+     output=replaceCorpusE3dBoardContour(output,i,rectanglePoints(board,changed.height,changed.width),path,true);
  });
  root.children.forEach((child,i)=>rebuild(child,next.children[i]!,[...path,i]));
  };
  before.forEach((root,i)=>rebuild(root,after[i]!,[i]));
  return output;
+}
+
+/** Keep proven rectangular contours consistent after model-only recalculation. */
+export function rebuildCorpusRectangleContours(before: CorpusS3dElement, after: CorpusS3dElement): CorpusS3dElement {
+  return {
+    ...after,
+    boards: after.boards.map((board,index) => {
+      const previous = before.boards[index]!;
+      if ((previous.height === board.height && previous.width === board.width) || !corpusBoardHasRebuildableRectangle(previous) || !board.height || !board.width) return board;
+      return { ...board, curveData: null, curveIsApproximate: false, curvePoints: rectanglePoints(previous,board.height,board.width) };
+    }),
+    children: after.children.map((child,index) => rebuildCorpusRectangleContours(before.children[index]!,child)),
+  };
+}
+
+function rectanglePoints(before: CorpusS3dBoard, height: number, width: number) {
+  return before.curvePoints.map(point => ({...point, x: Math.abs(point.x) < 0.001 ? 0 : height, z: Math.abs(point.z) < 0.001 ? 0 : width}));
 }
