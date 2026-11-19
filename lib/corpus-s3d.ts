@@ -365,6 +365,17 @@ function parseBoard(board: XmlRecord): CorpusS3dBoard {
   };
 }
 
+/** The board outline is separate from secondary machining and construction curves. */
+export function corpusBoardOutline(board: Pick<CorpusS3dBoard, "curveData" | "curvePoints">): readonly CorpusS3dCurvePoint[] {
+  const data = board.curveData;
+  if (!data) return board.curvePoints;
+  const curves = [...data.matchAll(/"CURVE=(-?\d+)"/g)];
+  if (curves.length === 0) return board.curvePoints;
+  const outline = curves.findIndex((curve) => curve[1] === "-1");
+  if (outline === -1) return [];
+  return parseCurvePoints(data.slice(curves[outline]!.index, curves[outline + 1]?.index));
+}
+
 export function parseCurvePoints(data: string | null): CorpusS3dCurvePoint[] {
   if (!data) return [];
   const values = [...data.matchAll(/"([^"]*)"/g)].map((match) => match[1] ?? "");

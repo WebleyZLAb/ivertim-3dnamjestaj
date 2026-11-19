@@ -6,7 +6,7 @@ import { MaterialTexturesContext, type MaterialTextures } from "./material-textu
 import { useContext, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { CorpusS3dBoard, CorpusS3dElement, CorpusS3dRoom } from "../lib/corpus-s3d";
+import { corpusBoardOutline, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dRoom } from "../lib/corpus-s3d";
 import { corpusBoardDimensions, corpusHolePosition, corpusRoomTotalHeight, evaluateCorpusFormula, expandCorpusCurve } from "../lib/corpus-geometry";
 import { resolveCorpusMainFaceHoles } from "../lib/corpus-hole-geometry";
 import { corpusGroupBounds, corpusElementAllowsModeling } from "../lib/corpus-group";
@@ -41,6 +41,8 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
   const [showHoles, setShowHoles] = useState(true);
   const [showProblems, setShowProblems] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [showBoardEdges, setShowBoardEdges] = useState(true);
+  const [frontVisibility, setFrontVisibility] = useState<"saved" | "shown" | "hidden">("saved");
   const [snapStep, setSnapStep] = useState<1 | 10 | 50>(10);
   const [viewRevision, setViewRevision] = useState(0);
   const [cameraView, setCameraView] = useState<CorpusCameraView>(() => corpusRoomCameraSessions.read(cameraScope)?.view ?? "home");
@@ -54,7 +56,7 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
   const orientationAxesRef = useRef<THREE.Group | null>(null);
   const visualRefs = useRef(new Map<CorpusS3dElement, {
     materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }>;
-    envelope: THREE.LineSegments;
+    envelope: THREE.LineSegments | null;
     group: THREE.Group;
   }>());
   selectedRef.current = selected;
@@ -74,10 +76,12 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
         material.color.set(isBoardGrouped ? 0x55bdf2 : isGrouped ? 0xffc857 : baseColor);
         material.emissive.set(isBoardGrouped ? 0x002638 : isGrouped ? 0x332100 : 0x000000);
       }
-      const envelopeMaterial = visual.envelope.material as THREE.LineBasicMaterial;
-      envelopeMaterial.color.set(issueColor ?? (isGrouped ? 0xa76000 : 0x667066));
-      envelopeMaterial.opacity = issueColor !== null || isGrouped ? 1 : 0.18;
-      visual.envelope.visible = showEnvelopes || issueColor !== null;
+      if (visual.envelope) {
+        const envelopeMaterial = visual.envelope.material as THREE.LineBasicMaterial;
+        envelopeMaterial.color.set(issueColor ?? (isGrouped ? 0xa76000 : 0x667066));
+        envelopeMaterial.opacity = issueColor !== null || isGrouped ? 1 : 0.18;
+        visual.envelope.visible = showEnvelopes || issueColor !== null;
+      }
     }
     const savedContact = contactRef.current;
     if (savedContact && (!selected || selected.name !== savedContact.name || selected.position.some((v, i) => v === null || Math.abs(v - savedContact.position[i]!) > 0.001))) {
@@ -197,13 +201,14 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
     let elementIndex = 0;
     const addElement = (parent: THREE.Group, element: CorpusS3dElement, root: CorpusS3dElement = element) => {
       selectionRoots.set(element, root);
-      if (element.visible === false) return;
+      const isFront = element.className.toLowerCase() === "tfrontaelement";
+      if (isFront && frontVisibility === "hidden") return;
+      if (element.visible === false && !(isFront && frontVisibility === "shown")) return;
       const [x, y, z] = element.position;
       const width = element.width;
       const height = element.height;
       const depth = element.depth;
-      if (x === null || y === null || z === null || width === null || height === null || depth === null) return;
-      if (width <= 0 || height <= 0 || depth <= 0) return;
+      if (x === null || y === null || z === null) return;
 
       const group = new THREE.Group();
       group.position.set(x, y, -z);
@@ -218,23 +223,27 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
       const isSelected = selectedRef.current === element || (selectedBoardRef.current === null && selectedRef.current !== null && containsElement(selectedRef.current, element));
       const isGrouped = groupElementsRef.current.has(element);
       const issueColor = showProblems ? problemColor(element, outsideRoomRef.current, overlappingRef.current) : null;
-      const envelopeGeometry = new THREE.BoxGeometry(width, height, depth);
-      const pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-      const pickMesh = new THREE.Mesh(envelopeGeometry, pickMaterial);
-      pickMesh.position.set(width / 2, height / 2, depth / 2);
-      pickMesh.userData.element = element;
-      group.add(pickMesh);
-      pickable.push(pickMesh);
+      // Structural groups can have zero depth while their children have valid geometry.
+      let envelope: THREE.LineSegments | null = null;
+      if (width !== null && width > 0 && height !== null && height > 0 && depth !== null && depth > 0) {
+        const envelopeGeometry = new THREE.BoxGeometry(width, height, depth);
+        const pickMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+        const pickMesh = new THREE.Mesh(envelopeGeometry, pickMaterial);
+        pickMesh.position.set(width / 2, height / 2, depth / 2);
+        pickMesh.userData.element = element;
+        group.add(pickMesh);
+        pickable.push(pickMesh);
 
-      const envelopeMaterial = new THREE.LineBasicMaterial({
-        color: issueColor ?? (isGrouped ? 0xa76000 : 0x667066),
-        transparent: true,
-        opacity: issueColor !== null || isGrouped ? 1 : 0.18,
-      });
-      const envelope = new THREE.LineSegments(new THREE.EdgesGeometry(envelopeGeometry), envelopeMaterial);
-      envelope.position.copy(pickMesh.position);
-      envelope.visible = showEnvelopes || issueColor !== null;
-      group.add(envelope);
+        const envelopeMaterial = new THREE.LineBasicMaterial({
+          color: issueColor ?? (isGrouped ? 0xa76000 : 0x667066),
+          transparent: true,
+          opacity: issueColor !== null || isGrouped ? 1 : 0.18,
+        });
+        envelope = new THREE.LineSegments(new THREE.EdgesGeometry(envelopeGeometry), envelopeMaterial);
+        envelope.position.copy(pickMesh.position);
+        envelope.visible = showEnvelopes || issueColor !== null;
+        group.add(envelope);
+      }
 
       const materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }> = [];
       for (const [boardIndex, board] of element.boards.entries()) {
@@ -242,6 +251,7 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
         const boardGrouped = isSelected && boardGroupSelectionRef.current.has(boardIndex);
         const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, boardGrouped, isGrouped, showHoles, textureForBoard(board));
         if (!boardMesh) continue;
+        boardMesh.edges.visible = showBoardEdges;
         group.add(boardMesh.mesh, boardMesh.edges, boardMesh.pickMesh);
         pickable.push(boardMesh.pickMesh);
         materials.push({ boardIndex, material: boardMesh.material, baseColor: boardMesh.baseColor });
@@ -556,7 +566,7 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
       if (groupEnvelopeRef.current === groupEnvelope) groupEnvelopeRef.current = null;
       if (orientationAxesRef.current === orientationAxes) orientationAxesRef.current = null;
     };
-  }, [cameraScope, elements, room, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData, showEnvelopes, showHoles, showProblems, showGrid, snapStep, viewRevision, cameraView]);
+  }, [cameraScope, elements, room, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
 
   useEffect(() => {
     const envelope = groupEnvelopeRef.current;
@@ -589,17 +599,21 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
           <button aria-pressed={cameraView === "top"} onClick={() => chooseView("top")}>Gornji</button>
           <button aria-pressed={cameraView === "selection"} disabled={!selected && groupElements.length < 2} onClick={() => chooseView("selection")}>Fokus na izbor</button>
           <button onClick={() => chooseView("home")}>Početni</button>
+          <button onClick={() => setFrontVisibility((value) => value === "shown" ? "hidden" : "shown")}>
+            {frontVisibility === "shown" ? "Sakrij fronte" : "Pokaži fronte"}
+          </button>
           <label className="canvas-snap">Snap<select value={snapStep} onChange={(event) => setSnapStep(Number(event.target.value) as 1 | 10 | 50)}><option value="1">1 mm</option><option value="10">10 mm</option><option value="50">50 mm</option></select></label>
           <details className="canvas-options">
             <summary>Prikaz</summary>
             <div>
               <button aria-pressed={showEnvelopes} onClick={() => setShowEnvelopes((value) => !value)}>Omotači</button>
+              <button disabled={frontVisibility === "saved"} onClick={() => setFrontVisibility("saved")}>Vrati vidljivost fronti iz projekta</button>
+              <button aria-pressed={showBoardEdges} onClick={() => setShowBoardEdges((value) => !value)}>Ivice ploča</button>
               <button aria-pressed={showGrid} onClick={() => setShowGrid((value) => !value)}>Mreža</button>
               <button aria-pressed={showHoles} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
               <button aria-pressed={showProblems} disabled={!outsideRoomElements.length && !overlappingElements.length} onClick={() => setShowProblems((value) => !value)}>Problemi ({new Set([...outsideRoomElements, ...overlappingElements]).size})</button>
             </div>
           </details>
-          <div className="three-axis"><span className="axis-x">X</span><span className="axis-y">Y</span><span className="axis-z">Z</span></div>
         </div>
       </div>
       <div className="three-canvas" ref={containerRef} />
@@ -819,7 +833,14 @@ function createBoardMesh(
   mesh.userData.boardIndex = boardIndex;
   if (showHoles) addHoleMarkers(mesh, board, sizeX, sizeY, sizeZ, height!, width!, thickness!);
 
-  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x4d554d, transparent: true, opacity: 0.52 });
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x363a37, transparent: true, opacity: 0.68, depthWrite: false });
+  // Separate coplanar lines from their faces while keeping depth testing against other boards.
+  edgeMaterial.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <project_vertex>",
+      "#include <project_vertex>\n gl_Position = projectionMatrix * (mvPosition + vec4(0.0, 0.0, 0.18, 0.0));",
+    );
+  };
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 22), edgeMaterial);
   edges.visible = false;
   edges.position.copy(mesh.position);
@@ -843,7 +864,7 @@ function createBoardGeometry(
   thickness: number,
   showHoles: boolean,
 ): THREE.BufferGeometry {
-  const sourcePoints = board.curvePoints.filter((point, index, all) =>
+  const sourcePoints = corpusBoardOutline(board).filter((point, index, all) =>
     index === 0 || point.x !== all[index - 1]?.x || point.z !== all[index - 1]?.z,
   );
   const points = expandCorpusCurve(sourcePoints);
@@ -930,11 +951,18 @@ function createBoardGeometry(
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.computeVertexNormals();
   const uv: number[] = [];
-  for (let i = 0; i < vertices.length; i += 3) {
-    const x=vertices[i]!, y=vertices[i+1]!, z=vertices[i+2]!;
-    if (board.direction === 0) uv.push(z / sizeZ, y / sizeY);
-    else if (board.direction === 1) uv.push(x / sizeX, y / sizeY);
-    else uv.push(x / sizeX, z / sizeZ);
+  const normals = geometry.getAttribute("normal");
+  const sizes = [sizeX, sizeY, sizeZ];
+  const [uAxis, vAxis, depthAxis] = board.direction === 0 ? [2, 1, 0] : board.direction === 1 ? [0, 1, 2] : [0, 2, 1];
+  for (let index = 0; index < normals.count; index += 1) {
+    const normal = [normals.getX(index), normals.getY(index), normals.getZ(index)];
+    let u = uAxis!;
+    let v = vAxis!;
+    if (Math.abs(normal[depthAxis!]!) < 0.5) {
+      if (Math.abs(normal[u]!) > Math.abs(normal[v]!)) u = depthAxis!;
+      else v = depthAxis!;
+    }
+    uv.push(vertices[index * 3 + u]! / sizes[u]!, vertices[index * 3 + v]! / sizes[v]!);
   }
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
   geometry.translate(-sizeX / 2, -sizeY / 2, -sizeZ / 2);

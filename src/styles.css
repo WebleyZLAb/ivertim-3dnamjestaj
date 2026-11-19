@@ -781,11 +781,11 @@ textarea:focus-visible,
 .legend-selected { background: var(--accent); border: 1px solid #667900; }
 .canvas-frame { min-height: 360px; position: relative; overflow: hidden; background: #f9faf7; border: 1px solid #d6dbd3; border-radius: 15px; box-shadow: inset 0 0 40px rgba(33,40,31,.035); }
 .elevation-svg { width: 100%; height: 100%; min-height: 430px; display: block; }
-.drawing-element polygon { fill: rgba(208,214,205,.82); stroke: #727b70; stroke-width: 4; vector-effect: non-scaling-stroke; cursor: pointer; }
+.drawing-element polygon { fill: rgba(208,214,205,.82); stroke: #727b70; stroke-width: 1; vector-effect: non-scaling-stroke; cursor: pointer; }
 .drawing-element:hover polygon { fill: rgba(226,235,194,.9); }
-.drawing-element.selected polygon { fill: rgba(205,225,116,.9); stroke: #667900; stroke-width: 6; }
-.drawing-element.grouped polygon { fill: rgba(255,200,87,.58); stroke: #c96b00; stroke-width: 6; }
-.drawing-element.selected.grouped polygon { fill: rgba(216,255,66,.9); stroke: #9b5a00; stroke-width: 7; }
+.drawing-element.selected polygon { fill: rgba(205,225,116,.9); stroke: #667900; stroke-width: 2; }
+.drawing-element.grouped polygon { fill: rgba(255,200,87,.58); stroke: #c96b00; stroke-width: 2; }
+.drawing-element.selected.grouped polygon { fill: rgba(216,255,66,.9); stroke: #9b5a00; stroke-width: 2.5; }
 .drawing-dimensions { pointer-events: none; }
 .drawing-dimensions line { stroke: #56610d; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .drawing-dimensions text { fill: #48520b; font-size: 34px; font-weight: 800; paint-order: stroke; stroke: rgba(249,250,247,.95); stroke-width: 9px; stroke-linejoin: round; }
@@ -828,11 +828,6 @@ textarea:focus-visible,
 .canvas-options > div button:disabled { opacity: .42; cursor: not-allowed; }
 .canvas-snap { display: inline-flex; align-items: center; gap: 5px; padding: 4px 5px 4px 9px; color: var(--muted); background: #f5f7f3; border: 1px solid var(--line); border-radius: 999px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .canvas-snap select { padding: 3px 5px; color: var(--ink); background: white; border: 1px solid #daddd7; border-radius: 999px; font-size: 9px; font-weight: 800; }
-.three-axis { display: flex; gap: 6px; padding: 7px; background: rgba(255,255,255,.76); border: 1px solid var(--line); border-radius: 9px; }
-.three-axis span { width: 25px; height: 25px; display: grid !important; place-items: center; margin: 0 !important; color: white !important; border-radius: 6px; font-size: 10px !important; font-weight: 850; }
-.axis-x { background: #d75a55; }
-.axis-y { background: #79a63b; }
-.axis-z { background: #4f78ba; }
 .three-canvas { min-height: 0; position: relative; overflow: hidden; background: #f4f6f1; border: 1px solid #d6dbd3; border-radius: 15px; box-shadow: inset 0 0 45px rgba(33,40,31,.045); }
 .three-canvas canvas { width: 100%; height: 100%; display: block; outline: none; cursor: default; }
 .three-canvas canvas:active { cursor: default; }
@@ -955,7 +950,6 @@ textarea:focus-visible,
 .canvas-workspace .three-toolbar > div:first-child { display: none; }
 .canvas-workspace .three-toolbar .three-controls { width: 100%; justify-content: flex-start; flex-direction: row; flex-wrap: wrap; gap: 5px; align-items: center; }
 .canvas-workspace .three-controls > button { padding: 5px 8px; border-radius: 4px; font-size: 10px; }
-.canvas-workspace .three-axis { margin-left: auto; }
 .canvas-workspace .three-canvas { border: 0; border-radius: 0; box-shadow: none; }
 .canvas-workspace .drawing-selection { min-height: 34px; margin: 0; padding: 5px 12px; border: 0; border-top: 1px solid #d1d9ca; border-radius: 0; background: #f7f9f4; }
 .canvas-workspace .drawing-selection strong { font-size: 11px; }
@@ -1042,16 +1036,7 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .variable-definition small { color: var(--muted); overflow-wrap: anywhere; }
 .variable-definition select { width: 100%; min-width: 0; padding: 5px; font: inherit; }
 
-.material-replacement { padding: 20px; overflow: auto; height: 100%; box-sizing: border-box; }
-.material-replacement label { display: grid; gap: 6px; margin: 12px 0; }
-.material-replacement select, .material-replacement input { width: 100%; min-width: 0; padding: 8px; box-sizing: border-box; }
-.material-replacement p { line-height: 1.5; }
-.material-replacement li { margin: 6px 0; }
 
-.desktop-material-notice { position: absolute; top: 28px; left: 8px; right: 8px; z-index: 4; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 7px 12px; background: #fff2d4; color: #503a12; border-bottom: 1px solid #d8bd79; font-size: 12px; }
-.desktop-material-notice button { padding: 4px 8px; }
-.material-replacement .check-field { display: flex; align-items: center; }
-.material-replacement .check-field input { width: auto; }
 
 .canvas-workspace .drawing-view .canvas-frame,
 .canvas-workspace .drawing-view .elevation-svg { min-height: 0; }
@@ -1080,3 +1065,22 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .library-resize-error code { display: block; overflow-wrap: anywhere; }
 .library-resize-error li { margin: 8px 0; }
 .library-resize-state { font-size: 11px; color: #4e6c2c; }
+
+.desktop-window[data-desktop-window="material-replacement"]:not(.maximized) { width: min(720px, 92vw); min-width: 0; }
+.material-replacement { display: grid; gap: 10px; padding: 12px 14px; font-size: 13px; line-height: 1.35; container-type: inline-size; }
+.material-replacement p { margin: 0; }
+.material-audit-summary { padding: 7px 9px; background: #e8eff5; border: 1px solid #c7d7e2; }
+.material-replacement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.material-replacement-fields { display: grid; align-content: start; gap: 7px; min-width: 0; }
+.material-replacement-fields label { display: grid; gap: 3px; min-width: 0; }
+.material-replacement select, .material-replacement input[type="search"] { width: 100%; min-width: 0; box-sizing: border-box; padding: 4px 6px; font: inherit; }
+.material-replacement .check-field { display: flex; gap: 6px; align-items: center; }
+.material-replacement .check-field input { margin: 0; flex-shrink: 0; }
+.material-replacement-scope, .material-replacement-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.material-replacement-scope, .material-replacement-actions { border-top: 1px solid #c7d7e2; padding-top: 8px; }
+.material-replacement details summary { cursor: pointer; }
+.material-replacement details ul { max-height: 100px; overflow: auto; margin: 4px 0 0; padding-left: 22px; }
+.material-replacement-actions .primary-button { margin: 0 0 0 auto; padding: 7px 10px; }
+@container (max-width: 460px) {
+  .material-replacement-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}

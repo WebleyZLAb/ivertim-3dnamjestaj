@@ -93,6 +93,29 @@ export function createCorpusMaterialIndex(catalogs: readonly CorpusMaterialCatal
   return { byUid, byName };
 }
 
+/** Aktivni katalog ima prednost nad kopijama istog dekora iz biblioteke elemenata. */
+export function activeLocalCorpusCatalogs(catalogs: readonly CorpusMaterialCatalog[]): CorpusMaterialCatalog[] {
+  const { byUid } = createCorpusMaterialIndex(catalogs);
+  const shadowed = new Set<CorpusMaterialRecord>();
+  for (const records of byUid.values()) {
+    if (records.length < 2) continue;
+    const active = records.filter((record) => /^elmtex\//i.test(record.sourceCatalog));
+    if (active.length !== 1) continue;
+    const record = active[0]!;
+    const copies = records.filter((candidate) => candidate !== record);
+    if (record.name && record.pictureFile && copies.every((copy) =>
+      /^elmsav\/elmtex\//i.test(copy.sourceCatalog)
+      && normalizeIdentity(copy.name) === normalizeIdentity(record.name)
+      && normalizeIdentity(copy.pictureFile) === normalizeIdentity(record.pictureFile)
+      && copy.materialType === record.materialType
+      && copy.textureSize.every((value, axis) => value === record.textureSize[axis])
+    )) {
+      copies.forEach((copy) => shadowed.add(copy));
+    }
+  }
+  return catalogs.map((catalog) => ({ ...catalog, records: catalog.records.filter((record) => !shadowed.has(record)) }));
+}
+
 /** Materijali koje korisnik smije izabrati bez nagađanja identiteta. */
 export function selectableCorpusMaterials(index: CorpusMaterialIndex): readonly CorpusMaterialRecord[] {
   return [...index.byUid.entries()]

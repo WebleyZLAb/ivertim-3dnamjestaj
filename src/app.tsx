@@ -60,7 +60,7 @@ import { analyzeCorpusMacroPayload, decodeCorpusText, type CorpusMacroAnalysis }
 import { corpusCmkDocumentFromDecodedPayloads, parseCorpusCmk, type CorpusCmkDocument } from "../lib/corpus-cmk";
 import { corpusMacroBoardContext, simulateCorpusCmk, type CorpusCmkOperationKind } from "../lib/corpus-cmk-simulation";
 import { resolveCorpusSawPaths, type CorpusSawResolution } from "../lib/corpus-saw";
-import { createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
+import { activeLocalCorpusCatalogs, createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
 import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoardLocalContactRectangle } from "../lib/corpus-board-contact";
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
 import { assertCorpusWorkingCopyChanges, applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
@@ -237,7 +237,8 @@ export function App() {
         text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Element nije dostupan: " + path); return decodeCorpusTextDocument(new Uint8Array(await response.arrayBuffer())).text; } })));
       setMacroFiles((data.macros ?? []).map(path => ({ name: path.split("/").at(-1)!, webkitRelativePath: path, size: 0,
         text: async () => { const response = await fetch(localCorpusUrl(path)); if (!response.ok) throw new Error("Makro nije dostupan: " + path); return decodeCorpusText(new Uint8Array(await response.arrayBuffer())); } })));
-      const index = createCorpusMaterialIndex(data.catalogs);
+      const catalogs = activeLocalCorpusCatalogs(data.catalogs);
+      const index = createCorpusMaterialIndex(catalogs);
       const files = new Map(data.files.map(path => [normalizeLibraryPath(path), path]));
       const textureByUid = new Map<string, MaterialTextureSource>();
       const resolutionByUid = new Map<string, MaterialResolution>();
@@ -253,7 +254,7 @@ export function App() {
         const source = { url: localCorpusUrl(actual), name: record.name, textureSize: record.textureSize };
         textureByUid.set(uid, source); resolutionByUid.set(uid, { kind: "ready", source });
       }
-      setMaterialLibrary({ catalogs: data.catalogs, folderName: "Corpus", catalogCount: data.catalogs.length, recordCount: data.catalogs.reduce((s,c) => s+c.records.length,0), textureByUid, resolutionByUid, ambiguousUids, missingPictures });
+      setMaterialLibrary({ catalogs, folderName: "Corpus", catalogCount: catalogs.length, recordCount: catalogs.reduce((s,c) => s+c.records.length,0), textureByUid, resolutionByUid, ambiguousUids, missingPictures });
     }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : "Lokalna biblioteka nije učitana."); });
     return () => { active = false; };
   }, []);
@@ -271,6 +272,17 @@ export function App() {
   const groupCutList = useMemo(() => buildCorpusCutList(selectedGroupElements), [selectedGroupElements]);
   const groupConsumablesList = useMemo(() => buildCorpusConsumablesList(selectedGroupElements), [selectedGroupElements]);
   const materialReferenceAudit = useMemo(() => project && materialLibrary ? inspectCorpusMaterialReferences(project.inspection.elements, createCorpusMaterialIndex(materialLibrary.catalogs)) : null, [project?.inspection.elements, materialLibrary]);
+  const reviewedMaterialProject = useRef<CorpusS3dInspection | null>(null);
+  const materialProject = project?.originalInspection;
+  const editorOpen = documentWindows.includes("data");
+  useEffect(() => {
+    if (!materialProject || !materialReferenceAudit || editorOpen || reviewedMaterialProject.current === materialProject) return;
+    reviewedMaterialProject.current = materialProject;
+    if (materialReferenceAudit.missing.length || materialReferenceAudit.ambiguous.length) {
+      activateWindow("material-replacement");
+      setMaterialReplacementOpen(true);
+    }
+  }, [materialProject, materialReferenceAudit, editorOpen, activateWindow]);
   const projectTextureMatches = useMemo(() => {
     if (!project || !materialLibrary) return 0;
     return flattenCorpusS3dElements(project.inspection.elements).reduce((sum, element) =>
@@ -588,6 +600,7 @@ export function App() {
       setGroupSelection([]);
       setError(null);
       setRecoverySaveState("saved");
+      setMaterialReplacementOpen(false);
       setStartupOpen(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Lokalni oporavak nije moguće vratiti.");
@@ -2002,8 +2015,6 @@ export function App() {
         </aside>
 
         <section className="detail-panel drawing-panel desktop-scene">
-    {project && materialReferenceAudit && (materialReferenceAudit.missing.length > 0 || materialReferenceAudit.ambiguous.length > 0) && <div className="desktop-material-notice" role="status"><span>Materijali projekta: {materialReferenceAudit.missing.length} ploča bez pronađenog UID-a · {materialReferenceAudit.ambiguous.length} sa dvosmislenim UID-om.</span><button disabled={documentWindows.includes("data")} onClick={() => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); }}>Provjeri i izaberi zamjenu…</button></div>}
-          <div className="desktop-scene-caption"><span>{viewMode === "drawing" ? "Tehnički nacrt" : "Perspektiva"}</span><strong>{project.fileName}</strong></div>
           {viewMode === "drawing" ? (            <ElevationView fileName={project.fileName} elements={project.inspection.elements} selected={selected} groupElements={groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean)} onSelect={selectElement} onToggleGroup={(element) => toggleGroupElement(project.inspection.elements.indexOf(element))} onOpenData={() => openDocument("data")} />) : (            <Suspense fallback={<div className="three-loading"><span /><strong>Pripremam 3D prikaz…</strong></div>}>
               <Room3DView
                 key={corpusRoomCameraSessions.key(project.originalInspection)}
@@ -2746,7 +2757,7 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
         <div>
           <p className="eyebrow">{labels[0]}</p>
           <h2>{labels[1]}</h2>
-          <span>{shapes.length} elemenata u nacrtu{hiddenCount > 0 ? ` · ${hiddenCount} sakrivenih je izostavljeno` : ""} · mjere u milimetrima</span>
+          <span>{shapes.length} gabarita elemenata{hiddenCount > 0 ? ` · ${hiddenCount} sakrivenih je izostavljeno` : ""} · mjere u milimetrima</span>
         </div>
         <div><div className="view-switch" aria-label="Projekcija nacrta">{(["front", "top", "side"] as const).map((view) => <button key={view} aria-current={projection === view ? "true" : undefined} className={projection === view ? "active" : ""} onClick={() => setProjection(view)}>{view === "front" ? "Prednji" : view === "top" ? "Gornji" : "Bočni"}</button>)}<button onClick={() => downloadText(`${fileName.replace(/\.(?:s3d|e3d)$/i, "")}-${projection === "front" ? "PREDNJI" : projection === "top" ? "GORNJI" : "BOCNI"}-NACRT.svg`, corpusDrawingSvg(elements, projection, selected, groupElements), "image/svg+xml;charset=utf-8")}>Izvezi SVG</button></div><div className="drawing-legend"><span><i className="legend-normal" /> Element</span><span><i className="legend-selected" /> Izabran</span>{groupBounds && <span><i className="legend-group" /> Grupa</span>}</div></div>
       </div>

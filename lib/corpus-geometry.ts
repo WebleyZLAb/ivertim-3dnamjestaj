@@ -68,10 +68,9 @@ export function expandCorpusCurve(
     if (current.style === 0 && (next.style === 0 || (next.style === 2 && typeof next.arcRadius === "number" && next.arcRadius > 0))) continue;
     if (current.style === 2 && typeof current.arcRadius === "number" && current.arcRadius > 0) {
       const arc = circularArc(current, next, current.arcRadius, current.arcSmooth === 0 ? -1 : 1, subdivisions);
-      if (arc) {
-        result.push(...arc);
-        continue;
-      }
+      // An arc that cannot span its endpoints must not bulge into a spline.
+      if (arc) result.push(...arc);
+      continue;
     }
     for (let step = 1; step < subdivisions; step += 1) {
       const t = step / subdivisions;
