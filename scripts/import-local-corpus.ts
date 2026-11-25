@@ -15,7 +15,7 @@ async function walk(root: string): Promise<string[]> {
 }
 const slash = (p: string) => p.replaceAll('\\','/');
 const catalogs = []; const elements: string[] = []; const copied: string[] = []; const edges = [];
-for (const folder of ['elmtex','Elmsav','Makro','skripte','Potrosni']) {
+for (const folder of ['elmtex','Elmsav','Makro','skripte','Potrosni','Template/fr3']) {
   for (const file of await walk(path.join(source,folder))) {
     const relative = slash(path.relative(source,file));
     const destination = path.join(target,relative);
@@ -60,6 +60,7 @@ await mkdir(archive,{recursive:true});
 await copyFile(path.join(source,'Default.CPO'),path.join(archive,'Default.CPO')); archived.push('Default.CPO');
 await writeFile(path.join(archive,'inventory.json'),JSON.stringify({source,importedAt:new Date().toISOString(),files:archived},null,2));
 const variableDefinitions = await loadCorpusVariableDefinitions(path.join(source, "config"));
-const manifest = { variableDefinitions, version:1, importedAt:new Date().toISOString(), catalogs,elements,edges,macros,scripts,scriptEntries,files:uniqueFiles };
+const templates = uniqueFiles.filter(p => /^Template\/fr3\/.*\.fr3$/i.test(p)).sort((a,b)=>a.localeCompare(b,'sr'));
+const manifest = { variableDefinitions, version:1, importedAt:new Date().toISOString(), catalogs,elements,edges,macros,scripts,scriptEntries,templates,files:uniqueFiles };
 await writeFile(path.join(target,'manifest.json'), JSON.stringify(manifest));
 console.log(JSON.stringify({catalogs:catalogs.length,materials:catalogs.reduce((s,c)=>s+c.records.length,0),elements:elements.length,edges:edges.length,edgeGroups:edges.reduce((a,e)=>({...a,[e.thickness]:(a[e.thickness]??0)+1}),{} as Record<string,number>),files:uniqueFiles.length,macros:macros.length,scripts:scripts.length,archived:archived.length}));

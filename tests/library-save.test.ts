@@ -89,3 +89,26 @@ test("dijalog izvodi foldere iz biblioteke i čisti naziv elementa", () => {
 
 // handleSaveElementRequest je izvezen i za Vite; ovdje samo potvrđujemo da ga modul nudi.
 assert.equal(typeof handleSaveElementRequest, "function");
+
+import { normalizeTemplatePath, saveLibraryTemplate } from "../scripts/library-save.mjs";
+
+test("šablon izvještaja se upisuje samo u Template/fr3 i dodaje u manifest templates", async () => {
+  assert.equal(normalizeTemplatePath("Template\\fr3\\user\\Moj.fr3"), "Template/fr3/user/Moj.fr3");
+  for (const bad of ["Template/fr3/../x.fr3", "Elmsav/x.fr3", "Template/fr3/x.txt", "Template/fr3/a:b.fr3", "Template/x.fr3"]) assert.throws(() => normalizeTemplatePath(bad), Error, bad);
+  const root = await fakeRoot();
+  try {
+    const xml = '<?xml version="1.0"?><TfrxReport Version="5.3.13"/>';
+    const result = await saveLibraryTemplate({ root, relativePath: "Template/fr3/user/Moj.fr3", xml, overwrite: false });
+    assert.deepEqual(result, { path: "Template/fr3/user/Moj.fr3", replaced: false });
+    for (const base of ["public", "dist"]) {
+      const dir = path.join(root, base, "local-corpus");
+      assert.equal(await readFile(path.join(dir, "Template", "fr3", "user", "Moj.fr3"), "utf8"), xml);
+      const manifest = JSON.parse(await readFile(path.join(dir, "manifest.json"), "utf8"));
+      assert.deepEqual(manifest.templates, ["Template/fr3/user/Moj.fr3"]);
+      assert.ok(manifest.files.includes("Template/fr3/user/Moj.fr3"));
+    }
+    await assert.rejects(saveLibraryTemplate({ root, relativePath: "Template/fr3/user/Moj.fr3", xml, overwrite: false }), { status: 409 });
+    await assert.rejects(saveLibraryTemplate({ root, relativePath: "Template/fr3/user/B.fr3", xml: "<html/>", overwrite: false }), { status: 400 });
+    assert.equal((await saveLibraryTemplate({ root, relativePath: "Template/fr3/user/Moj.fr3", xml, overwrite: true })).replaced, true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -70,6 +70,8 @@ import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dB
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
 import { SaveElementDialog, type SaveElementRequest } from "./save-element-dialog";
 import { UsedMaterialWindow } from "./used-material-window";
+import { ReportWindow } from "./report-window";
+import { buildReportDatasets, readProjectInfo } from "../lib/fastreport/project-datasets";
 import { buildCorpusUsedMaterial } from "../lib/corpus-used-material";
 import { clearCorpusRecovery, loadCorpusRecovery, saveCorpusRecovery } from "./recovery-store";
 
@@ -148,7 +150,7 @@ type MaterialResolution =
   | { kind: "missing-picture"; name: string; pictureFile: string; reason: string };
 
 type LibraryElementFile = Pick<File, "name" | "webkitRelativePath" | "text" | "size">;
-type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
+type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; templates?: string[]; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
 const LocalCorpusContext = createContext<LocalCorpusLibrary | null>(null);
 const DEFAULT_WALL_COLOR = "#ffffff";
 const localCorpusUrl = (path: string) => "/local-corpus/" + path.split("/").map(encodeURIComponent).join("/");
@@ -212,6 +214,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [usedMaterialOpen, setUsedMaterialOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
   const [saveElement, setSaveElement] = useState<{ xml: string; name: string; libraryPath: string | null; busy: boolean; message: string | null } | null>(null);
   const [roomDisplayMode, setRoomDisplayMode] = useState<RoomDisplayMode>("decor");
@@ -279,10 +282,23 @@ export function App() {
       .slice(0, 100);
   }, [macroFiles, macroQuery]);
   const materialIndex = useMemo(() => materialLibrary ? createCorpusMaterialIndex(materialLibrary.catalogs) : null, [materialLibrary]);
-  const usedMaterial = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedMaterial(project.inspection.elements, (uid, name) => {
+  const materialLabel = useCallback((uid: string, name: string) => {
     const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
     return match && "record" in match ? match.record.name : name || uid;
-  }) : null, [project, usedMaterialOpen, materialIndex]);
+  }, [materialIndex]);
+  const usedMaterial = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedMaterial(project.inspection.elements, materialLabel) : null, [project, usedMaterialOpen, materialLabel]);
+  const materialDetails = useCallback((uid: string, name: string) => {
+    const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
+    if (!match || !("record" in match)) return null;
+    const fields = match.record.fields;
+    return { code: fields.SIFRA?.[0] ?? "", grain: fields.GOD?.[0] === "-1" };
+  }, [materialIndex]);
+  const reportDatasets = useMemo(() => project && reportOpen ? buildReportDatasets(project.inspection.elements, readProjectInfo(project.sourceXml, project.fileName), materialLabel, materialDetails) : null, [project, reportOpen, materialLabel, materialDetails]);
+  const loadReportTemplate = useCallback(async (path: string) => {
+    const response = await fetch(localCorpusUrl(path));
+    if (!response.ok) throw new Error(`Šablon nije dostupan: ${path}`);
+    return response.text();
+  }, []);
   const layoutIssues = useMemo(() => project ? analyzeCorpusLayout(project.inspection.elements, project.inspection.room) : [], [project]);
   const layoutProblemElements = useMemo(() => project ? corpusLayoutProblemElements(layoutIssues, project.inspection.elements) : { outsideRoom: [], overlapping: [] }, [layoutIssues, project]);
   // Pod sobe: dekor iz Corpus foldera Podovi (CORPUS_FLOORING), po PNAME materijala poda u S3D-u.
@@ -669,7 +685,7 @@ export function App() {
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
     { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
-    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
+    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Izvještaji (Ispiši)…", disabled: !project, onClick: () => { activateWindow("reports"); setReportOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
     { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
@@ -2004,7 +2020,8 @@ export function App() {
       )}
 
       {scriptLibraryOpen && localCorpus && <CorpusScriptLibrary library={localCorpus} onClose={() => setScriptLibraryOpen(false)} />}
-      {usedMaterialOpen && usedMaterial && <DesktopWindow id="used-material" title="Utrošeni materijal" className="desktop-document-window" onClose={() => setUsedMaterialOpen(false)}><UsedMaterialWindow used={usedMaterial} onOpenCutList={() => openDocument("cutlist")} /></DesktopWindow>}
+      {reportOpen && reportDatasets && <DesktopWindow id="reports" title="Ispiši" className="desktop-document-window" initialMaximized onClose={() => setReportOpen(false)}><ReportWindow templates={localCorpus?.templates ?? []} loadTemplate={loadReportTemplate} datasets={reportDatasets} projectName={project.fileName} onTemplateSaved={(path) => setLocalCorpus((current) => current && !(current.templates ?? []).includes(path) ? { ...current, templates: [...(current.templates ?? []), path].sort((a, b) => a.localeCompare(b, "sr")), files: [...current.files, path] } : current)} /></DesktopWindow>}
+      {usedMaterialOpen && usedMaterial && <DesktopWindow id="used-material" title="Utrošeni materijal" className="desktop-document-window" onClose={() => setUsedMaterialOpen(false)}><UsedMaterialWindow used={usedMaterial} onOpenCutList={() => openDocument("cutlist")} onPrint={() => { activateWindow("reports"); setReportOpen(true); }} /></DesktopWindow>}
       {saveElement && <DesktopWindow id="save-element" title="Spremi element" onClose={() => setSaveElement(null)}><SaveElementDialog existingPath={saveElement.libraryPath} defaultName={saveElement.name} libraryElements={localCorpus?.elements ?? []} busy={saveElement.busy} message={saveElement.message} onSave={saveSelectedToLibrary} onDownload={downloadSelectedE3d} onCancel={() => setSaveElement(null)} /></DesktopWindow>}
       {materialReplacementOpen && materialLibrary && <DesktopWindow id="material-replacement" title="Provjera i zamjena materijala" className="desktop-document-window" onClose={() => setMaterialReplacementOpen(false)}><MaterialReplacement elements={project.inspection.elements} catalogs={materialLibrary.catalogs} onReplace={replaceProjectMaterial} /></DesktopWindow>}
       {macroLibraryOpen && (

@@ -4,13 +4,14 @@ import type { UsedMaterial } from "../lib/corpus-used-material.ts";
 type Props = {
   used: UsedMaterial;
   onOpenCutList(): void;
+  onPrint(): void;
 };
 
 const m2 = (value: number) => value.toFixed(3);
 const total = (value: number) => value.toFixed(2);
 
 /** Prozor „Utrošeni materijal": ploče po materijalu, rubne trake i okovi. Izmjene količina važe samo u prozoru. */
-export function UsedMaterialWindow({ used, onOpenCutList }: Props) {
+export function UsedMaterialWindow({ used, onOpenCutList, onPrint }: Props) {
   const [tab, setTab] = useState<"boards" | "elements">("boards");
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set(used.materials.map((group) => group.key)));
   const [quantities, setQuantities] = useState<ReadonlyMap<string, number>>(() => new Map());
@@ -49,7 +50,7 @@ export function UsedMaterialWindow({ used, onOpenCutList }: Props) {
       <p className="used-material-total">Ploče ukupno: <strong>{total(totalArea)} m²</strong> · Rubne trake: <strong>{total(edgeTotal)} m</strong> · Okovi: <strong>{used.fittings.reduce((sum, item) => sum + item.quantity, 0)} kom</strong></p>
       <p className="used-material-note">Količine (− / +) i brisanje redova mijenjaju samo ovaj prikaz, ne projekat. Cijene i marže još nisu uključeni. Rubne trake su neto, bez dodatka koji Corpus dodaje za neke grupe.</p>
     </>}
-    <div className="used-material-actions"><button onClick={onOpenCutList}>Krojna lista</button></div>
+    <div className="used-material-actions"><button onClick={onPrint}>Ispiši…</button><button onClick={onOpenCutList}>Krojna lista</button></div>
   </div>;
 }
 
