@@ -3,15 +3,20 @@ import { createCorpusDragMotion, resolveCorpusDragMotion, type CorpusDragMotion 
 import { corpusDragBody, type DragBody, type DragContact } from "../lib/corpus-drag-snap";
 import { corpusBoardRenderTransform } from "../lib/corpus-render-transform";
 import { MaterialTexturesContext, type MaterialTextures } from "./material-textures";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { corpusBoardOutline, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dRoom } from "../lib/corpus-s3d";
+import { corpusBoardOutline, parseCurvePoints, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dRoom } from "../lib/corpus-s3d";
 import { corpusBoardDimensions, corpusHolePosition, corpusRoomTotalHeight, evaluateCorpusFormula, expandCorpusCurve } from "../lib/corpus-geometry";
 import { resolveCorpusMainFaceHoles } from "../lib/corpus-hole-geometry";
 import { corpusGroupBounds, corpusElementAllowsModeling } from "../lib/corpus-group";
 
+export type RoomDisplayMode = "drilling" | "lines" | "edge-check" | "decor";
+
 type Room3DViewProps = {
+  displayMode: RoomDisplayMode;
+  showBoardEdges: boolean;
+  captureRef: { current: ((dataUrl: string) => void) | null };
   cameraScope: object;
   elements: readonly CorpusS3dElement[];
   room: CorpusS3dRoom;
@@ -31,17 +36,22 @@ type Room3DViewProps = {
 };
 
 
-export function Room3DView({ cameraScope, elements, room, selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData }: Room3DViewProps) {
+export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScope, elements, room, selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData }: Room3DViewProps) {
+  const sceneActions = useRef({ onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData });
+  useLayoutEffect(() => {
+    sceneActions.current = { onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData };
+  }, [onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData]);
+
   const contactRef = useRef<{ name: string; position: number[]; contacts: DragContact[] } | null>(null);
   const contactGuideRef = useRef<THREE.LineSegments | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const renderResources = useRef<{ renderer: THREE.WebGLRenderer; textures: ReturnType<typeof createMaterialTextures> } | null>(null);
   const appliedViewRevisionRef = useRef(-1);
   const lastElementClickRef = useRef<{ element: CorpusS3dElement; time: number } | null>(null);
   const [showEnvelopes, setShowEnvelopes] = useState(false);
   const [showHoles, setShowHoles] = useState(true);
   const [showProblems, setShowProblems] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
-  const [showBoardEdges, setShowBoardEdges] = useState(true);
   const [frontVisibility, setFrontVisibility] = useState<"saved" | "shown" | "hidden">("saved");
   const [snapStep, setSnapStep] = useState<1 | 10 | 50>(10);
   const [viewRevision, setViewRevision] = useState(0);
@@ -100,17 +110,34 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
     const container = containerRef.current;
     if (!container) return;
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4f6f1);
-    scene.fog = new THREE.Fog(0xf4f6f1, 9000, 18000);
-
-    const camera = new THREE.PerspectiveCamera(38, 1, 5, 40000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
+    const textures = createMaterialTextures(materialTextures, renderer.capabilities.getMaxAnisotropy());
+    renderResources.current = { renderer, textures };
+
+    return () => {
+      renderResources.current = null;
+      textures.dispose();
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, [materialTextures]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const resources = renderResources.current;
+    if (!container || !resources) return;
+    const { renderer, textures: { textureForBoard } } = resources;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf4f6f1);
+    scene.fog = new THREE.Fog(0xf4f6f1, 9000, 18000);
+
+    const camera = new THREE.PerspectiveCamera(38, 1, 5, 40000);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -196,7 +223,6 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
     const elementGroups = new Map<CorpusS3dElement, THREE.Group>();
     const selectionRoots = new Map<CorpusS3dElement, CorpusS3dElement>();
     visualRefs.current.clear();
-    const { textureForBoard, dispose: disposeTextures } = createMaterialTextures(materialTextures, renderer.capabilities.getMaxAnisotropy());
 
     let elementIndex = 0;
     const addElement = (parent: THREE.Group, element: CorpusS3dElement, root: CorpusS3dElement = element) => {
@@ -249,9 +275,9 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
       for (const [boardIndex, board] of element.boards.entries()) {
         const boardSelected = isSelected && (selectedBoardRef.current === null || selectedBoardRef.current === boardIndex);
         const boardGrouped = isSelected && boardGroupSelectionRef.current.has(boardIndex);
-        const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, boardGrouped, isGrouped, showHoles, textureForBoard(board));
+        const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, boardGrouped, isGrouped, displayMode === "drilling" || ((displayMode === "decor" || displayMode === "edge-check") && showHoles), displayMode === "decor" ? textureForBoard(board) : null, displayMode);
         if (!boardMesh) continue;
-        boardMesh.edges.visible = showBoardEdges;
+        boardMesh.edges.visible = showBoardEdges || displayMode === "lines" || displayMode === "drilling";
         group.add(boardMesh.mesh, boardMesh.edges, boardMesh.pickMesh);
         pickable.push(boardMesh.pickMesh);
         materials.push({ boardIndex, material: boardMesh.material, baseColor: boardMesh.baseColor });
@@ -331,9 +357,9 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
     const pickAt = (clientX: number, clientY: number, toggleGroup = false) => {
       const hit = hitAt(clientX, clientY);
       const element = hit?.object.userData.element as CorpusS3dElement | undefined;
-      if (element && toggleGroup && rootElements.has(element)) onToggleGroup(element);
-      else if (element) onSelect(element);
-      else onClearSelection();
+      if (element && toggleGroup && rootElements.has(element)) sceneActions.current.onToggleGroup(element);
+      else if (element) sceneActions.current.onSelect(element);
+      else sceneActions.current.onClearSelection();
     };
     const axisHitAt = (clientX: number, clientY: number): "X" | "Y" | "Z" | null => {
       if (!selectedRef.current || !corpusElementAllowsModeling(selectedRef.current) || !orientationAxes.visible) return null;
@@ -448,8 +474,8 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
         handledPointerClick = true;
         if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         if (completed.position.some((value, index) => value !== completed.originalPosition[index])) {
-          if (completed.grouped.length) onMoveGroup([completed.position[0] - completed.originalPosition[0], completed.position[1] - completed.originalPosition[1], completed.position[2] - completed.originalPosition[2]]);
-          else onMove(completed.element, completed.position);
+          if (completed.grouped.length) sceneActions.current.onMoveGroup([completed.position[0] - completed.originalPosition[0], completed.position[1] - completed.originalPosition[1], completed.position[2] - completed.originalPosition[2]]);
+          else sceneActions.current.onMove(completed.element, completed.position);
         }
         if (completed.moved || completed.axis) {
           downPoint = null;
@@ -478,7 +504,7 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
       const previousClick = lastElementClickRef.current;
       if (clickedElement && previousClick?.element === clickedElement && now - previousClick.time <= 450) {
         lastElementClickRef.current = null;
-        onOpenData();
+        sceneActions.current.onOpenData();
       } else {
         lastElementClickRef.current = clickedElement ? { element: clickedElement, time: now } : null;
       }
@@ -532,6 +558,11 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
     const render = () => {
       controls.update();
       renderer.render(scene, camera);
+      const capture = captureRef.current;
+      if (capture) {
+        captureRef.current = null;
+        capture(renderer.domElement.toDataURL("image/png"));
+      }
       frame = requestAnimationFrame(render);
     };
     render();
@@ -550,7 +581,7 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
       renderer.domElement.removeEventListener("click", onClick);
       controls.dispose();
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Sprite) {
+        if (object instanceof THREE.Mesh || object instanceof THREE.Line || object instanceof THREE.Points || object instanceof THREE.Sprite) {
           if (!(object instanceof THREE.Sprite)) object.geometry.dispose();
           const materials = Array.isArray(object.material) ? object.material : [object.material];
           for (const material of materials) {
@@ -559,14 +590,12 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
           }
         }
       });
-      disposeTextures();
-      renderer.dispose();
-      renderer.domElement.remove();
+      sun.shadow.dispose();
       visualRefs.current.clear();
       if (groupEnvelopeRef.current === groupEnvelope) groupEnvelopeRef.current = null;
       if (orientationAxesRef.current === orientationAxes) orientationAxesRef.current = null;
     };
-  }, [cameraScope, elements, room, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
+  }, [cameraScope, elements, room, materialTextures, captureRef, displayMode, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
 
   useEffect(() => {
     const envelope = groupEnvelopeRef.current;
@@ -608,9 +637,8 @@ export function Room3DView({ cameraScope, elements, room, selected, selectedBoar
             <div>
               <button aria-pressed={showEnvelopes} onClick={() => setShowEnvelopes((value) => !value)}>Omotači</button>
               <button disabled={frontVisibility === "saved"} onClick={() => setFrontVisibility("saved")}>Vrati vidljivost fronti iz projekta</button>
-              <button aria-pressed={showBoardEdges} onClick={() => setShowBoardEdges((value) => !value)}>Ivice ploča</button>
               <button aria-pressed={showGrid} onClick={() => setShowGrid((value) => !value)}>Mreža</button>
-              <button aria-pressed={showHoles} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
+              <button disabled={displayMode === "lines" || displayMode === "drilling"} aria-pressed={displayMode === "drilling" || (displayMode !== "lines" && showHoles)} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
               <button aria-pressed={showProblems} disabled={!outsideRoomElements.length && !overlappingElements.length} onClick={() => setShowProblems((value) => !value)}>Problemi ({new Set([...outsideRoomElements, ...overlappingElements]).size})</button>
             </div>
           </details>
@@ -784,6 +812,43 @@ function problemColor(element: CorpusS3dElement, outsideRoom: ReadonlySet<Corpus
   return null;
 }
 
+// Corpus stores these Gola profiles as two matching cross-sections along X.
+function createGolaGeometry(board: CorpusS3dBoard, element: CorpusS3dElement): THREE.ExtrudeGeometry | null {
+  if (!/^gola_[lc]_profil$/i.test(element.name) || !board.curveData?.includes('"CUSYSMODE=3"')) return null;
+  const sections = [...board.curveData.matchAll(/"CURVE=(-?\d+)"/g)];
+  if (sections.length !== 2 || sections[0]![1] !== "-1" || sections[1]![1] !== "0") return null;
+  const [first, second] = sections.map((section, index) => board.curveData!.slice(section.index, sections[index + 1]?.index));
+  const axisKey = board.direction === 0 ? "PTDEPTH" : "PTZ";
+  const readAxis = (section: string) => [...section.matchAll(new RegExp(`"${axisKey}=([^"]+)"`, "g"))].map((match) => Number(match[1]) * 1000);
+  const start = readAxis(first!);
+  const end = readAxis(second!);
+  const outline = parseCurvePoints(first!);
+  const endOutline = parseCurvePoints(second!);
+  const depth = [...first!.matchAll(/"PTDEPTH=([^"]+)"/g)].map((match) => -Number(match[1]) * 1000);
+  const endDepth = [...second!.matchAll(/"PTDEPTH=([^"]+)"/g)].map((match) => -Number(match[1]) * 1000);
+  const length = end[0]! - start[0]!;
+  const close = (a: number, b: number) => Math.abs(a - b) < 0.05;
+  if ((board.direction !== 0 && board.direction !== 1) || !(length > 0) || outline.length < 3 ||
+      [endOutline, start, end, depth, endDepth].some((values) => values.length !== outline.length) ||
+      !outline.every((point, index) => close(start[index]!, start[0]!) && close(end[index]!, end[0]!) &&
+        close(point.x, endOutline[index]!.x) &&
+        (board.direction === 0 ? close(point.z, endOutline[index]!.z) : close(depth[index]!, endDepth[index]!)))) return null;
+
+  const section = board.direction === 0
+    ? expandCorpusCurve(outline)
+    : outline.map((point, index) => ({ x: point.x, z: depth[index]! }));
+  const shape = new THREE.Shape(section.map(({ x, z }) => new THREE.Vector2(x, z)));
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  geometry.applyMatrix4(new THREE.Matrix4().set(
+    0, 0, 1, start[0]!,
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 0, 1,
+  ));
+  geometry.computeBoundingBox();
+  return geometry;
+}
+
 function createBoardMesh(
   board: CorpusS3dBoard,
   element: CorpusS3dElement,
@@ -794,6 +859,7 @@ function createBoardMesh(
   grouped: boolean,
   showHoles: boolean,
   texture: THREE.Texture | null,
+  displayMode: RoomDisplayMode = "decor",
 ): { mesh: THREE.Mesh; edges: THREE.LineSegments; pickMesh: THREE.Mesh; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation } | null {
   if (board.visible === false) return null;
   const [x, y, z] = board.position;
@@ -801,12 +867,15 @@ function createBoardMesh(
   const width = board.width;
   const thickness = board.thickness;
   if ([x, y, z, height, width, thickness].some((value) => value === null)) return null;
-  if (height! <= 0 || width! <= 0 || thickness! <= 0) return null;
+  const profileGeometry = createGolaGeometry(board, element);
+  if (!profileGeometry && (height! <= 0 || width! <= 0 || thickness! <= 0)) return null;
 
   const [sizeX, sizeY, sizeZ] = corpusBoardDimensions(board.direction, height!, width!, thickness!);
-  const geometry = createBoardGeometry(board, sizeX, sizeY, sizeZ, thickness!, showHoles);
-  if (board.direction === 1) geometry.scale(1, 1, -1);
-  const baseColor = texture ? 0xffffff : colorForBoard(board, element, elementIndex, boardIndex);
+  const geometry = profileGeometry ?? createBoardGeometry(board, sizeX, sizeY, sizeZ, thickness!, showHoles);
+  if (!profileGeometry && board.direction === 1) geometry.scale(1, 1, -1);
+  const wire = displayMode === "lines" || displayMode === "drilling";
+  if (displayMode === "edge-check" && !profileGeometry) colorBoardSideFaces(geometry, board.direction);
+  const baseColor = displayMode === "edge-check" ? 0xffffff : texture ? 0xffffff : colorForBoard(board, element, elementIndex, boardIndex);
   const material = new THREE.MeshStandardMaterial({
     color: boardGrouped ? 0x55bdf2 : grouped ? 0xffc857 : baseColor,
     emissive: boardGrouped ? 0x002638 : grouped ? 0x332100 : 0x000000,
@@ -817,13 +886,11 @@ function createBoardMesh(
     opacity: board.transparent === true ? 0.42 : 1,
     depthWrite: board.transparent !== true,
     map: texture,
-    // Keep the enclosing front/back skin ahead of exactly touching shelf edges.
-    polygonOffset: board.direction === 1,
-    polygonOffsetFactor: board.direction === 1 ? -1 : 0,
-    polygonOffsetUnits: board.direction === 1 ? -1 : 0,
+    visible: !wire,
+    vertexColors: displayMode === "edge-check" && !profileGeometry,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  const transform = corpusBoardRenderTransform([x!, y!, z!], [sizeX, sizeY, board.direction === 1 ? -sizeZ : sizeZ], [board.xAngle ?? 0, board.angle ?? 0, board.zAngle ?? 0]);
+  const transform = corpusBoardRenderTransform([x!, y!, z!], profileGeometry ? [0, 0, 0] : [sizeX, sizeY, board.direction === 1 ? -sizeZ : sizeZ], [board.xAngle ?? 0, board.angle ?? 0, board.zAngle ?? 0]);
   mesh.position.fromArray(transform.position);
   mesh.rotation.set(...transform.rotation);
   mesh.castShadow = true;
@@ -831,9 +898,9 @@ function createBoardMesh(
   mesh.userData.element = element;
   mesh.userData.board = board;
   mesh.userData.boardIndex = boardIndex;
-  if (showHoles) addHoleMarkers(mesh, board, sizeX, sizeY, sizeZ, height!, width!, thickness!);
+  if (showHoles && !profileGeometry) addHoleMarkers(mesh, board, sizeX, sizeY, sizeZ, height!, width!, thickness!, displayMode === "drilling");
 
-  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x363a37, transparent: true, opacity: 0.68, depthWrite: false });
+  const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x172126, transparent: true, opacity: 0.96, depthWrite: false });
   // Separate coplanar lines from their faces while keeping depth testing against other boards.
   edgeMaterial.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace(
@@ -846,7 +913,7 @@ function createBoardMesh(
   edges.position.copy(mesh.position);
   edges.rotation.copy(mesh.rotation);
   const pickMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(sizeX, sizeY, sizeZ),
+    profileGeometry ? profileGeometry.clone() : new THREE.BoxGeometry(sizeX, sizeY, sizeZ),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false }),
   );
   pickMesh.position.copy(mesh.position);
@@ -854,6 +921,18 @@ function createBoardMesh(
   pickMesh.userData.element = element;
   pickMesh.userData.boardIndex = boardIndex;
   return { mesh, edges, pickMesh, material, baseColor };
+}
+
+function colorBoardSideFaces(geometry: THREE.BufferGeometry, direction: number | null) {
+  const normal = geometry.getAttribute("normal");
+  const color = new THREE.Color();
+  const colors: number[] = [];
+  for (let index = 0; index < normal.count; index += 1) {
+    const thicknessNormal = direction === 0 ? normal.getX(index) : direction === 1 ? normal.getZ(index) : normal.getY(index);
+    color.setHex(Math.abs(thicknessNormal) < 0.5 ? 0xe4a027 : 0xf4f4f1);
+    colors.push(color.r, color.g, color.b);
+  }
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
 }
 
 function createBoardGeometry(
@@ -980,9 +1059,46 @@ function addHoleMarkers(
   height: number,
   width: number,
   thickness: number,
+  showPhysicalMarkers: boolean,
 ): void {
   const variables = { B: height, L: width, D: thickness };
-  const physicalHoles = new Set(resolveCorpusMainFaceHoles(board).map(({ hole }) => hole));
+  const resolvedHoles = resolveCorpusMainFaceHoles(board);
+  const physicalHoles = new Set(resolvedHoles.map(({ hole }) => hole));
+  if (showPhysicalMarkers && resolvedHoles.length) {
+    const positions: number[] = [];
+    const centers: number[] = [];
+    const segments = 20;
+    const drillPosition = (u: number, v: number, face: number) => {
+      const [x, y, z] = board.direction === 0 ? [face, u, v]
+        : board.direction === 1 ? [v, u, face] : [u, face, v];
+      return [x - sizeX / 2, y - sizeY / 2, (z - sizeZ / 2) * (board.direction === 1 ? -1 : 1)];
+    };
+    for (const hole of resolvedHoles) {
+      const faces = hole.kind === "through" ? [0, thickness] : [hole.side === "min" ? 0 : thickness];
+      for (const face of faces) {
+        centers.push(...drillPosition(hole.u, hole.v, face));
+        for (let segment = 0; segment < segments; segment += 1) {
+          for (const endpoint of [segment, segment + 1]) {
+            const angle = endpoint / segments * Math.PI * 2;
+            const u = hole.u + Math.cos(angle) * hole.radius;
+            const v = hole.v + Math.sin(angle) * hole.radius;
+            positions.push(...drillPosition(u, v, face));
+          }
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({ color: 0x168dff, depthTest: false, depthWrite: false, transparent: true });
+    const markers = new THREE.LineSegments(geometry, material);
+    markers.renderOrder = 1;
+    const centerGeometry = new THREE.BufferGeometry();
+    centerGeometry.setAttribute("position", new THREE.Float32BufferAttribute(centers, 3));
+    const centerMaterial = new THREE.PointsMaterial({ color: 0x168dff, size: 7, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true });
+    const centerMarkers = new THREE.Points(centerGeometry, centerMaterial);
+    centerMarkers.renderOrder = 2;
+    mesh.add(markers, centerMarkers);
+  }
   for (const hole of board.holes) {
     if (physicalHoles.has(hole)) continue;
     const u = evaluateCorpusFormula(hole.xExpression, variables);

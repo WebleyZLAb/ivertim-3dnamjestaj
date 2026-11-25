@@ -282,3 +282,33 @@
 @media(max-width:700px) { .gola-cuts-body { grid-template-columns:1fr;overflow:auto; }.gola-cuts-side { overflow:visible; }.gola-cut-rows { overflow:visible; } }
 
 .gola-preview-switch { display:flex;gap:5px;margin-bottom:8px; }.gola-preview-switch button { padding:6px 10px;border:1px solid #aabfce;background:#f5f8fa;color:#36536a;font-size:11px; }.gola-preview-switch button.active { background:#d4e7f5; }.gola-side-preview { display:block;width:100%;height:300px;background:#fff;border:1px solid #c3d0da; }
+
+.desktop-toolbar > button { flex-shrink: 0; }
+.desktop-print-options { position: relative; flex: none; }
+.desktop-print-options > summary { cursor: pointer; list-style: none; padding: 9px 5px; }
+.desktop-print-options > div { position: absolute; z-index: 20; left: 0; top: 100%; min-width: 140px; padding: 4px; background: white; border: 1px solid #b7c9d7; border-radius: 4px; box-shadow: 0 4px 12px #17334522; }
+.desktop-print-options button { display: block; text-align: left; width: 100%; padding: 7px; font-size: 12px; }
+.desktop-print-image { display: none; }
+@media (max-width: 600px) {
+  .desktop-toolbar { height: auto; min-height: 52px; flex-wrap: wrap; }
+}
+@media print {
+  .corpus-desktop:has(.desktop-print-image) { display: block; min-height: 0; height: auto; }
+  .corpus-desktop:has(.desktop-print-image) > :not(.desktop-print-image) { display: none !important; }
+  .desktop-print-image { display: block; width: 100%; height: auto; }
+}
+
+.desktop-main .project-element-tree .element-tree { margin: 0; padding: 0; list-style: none; }
+.desktop-main .project-element-tree .element-tree .element-tree { padding-left: 14px; }
+.desktop-main .project-element-tree .tree-row-wrap { display: grid; grid-template-columns: 24px minmax(0, 1fr) 30px; min-height: 28px; }
+.desktop-main .project-element-tree .tree-row { display: block; min-height: 28px; border: 0; padding: 3px 4px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; font-size: 12px; }
+.desktop-main .project-element-tree .tree-row-hidden .tree-row { text-decoration: line-through; }
+.project-element-tree .tree-row-active { background: #cde1ed; box-shadow: inset 2px 0 #4795bd; }
+.project-element-tree .tree-expand, .project-element-tree .tree-eye { display: grid; place-items: center; min-height: 26px; color: #45748d; background: transparent; border: 0; padding: 0; }
+.project-element-tree :is(.tree-expand, .tree-eye):hover { background: #e2edf4; }
+.project-element-tree .tree-row-hidden .tree-eye { color: #788993; }
+.project-element-tree .tree-board-list { color: #506772; }
+.project-element-tree .tree-rename { min-width: 0; padding: 3px 4px; }
+
+.desktop-sidebar.tab-elements .desktop-panel-content { grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.desktop-sidebar.tab-elements .tree-scroll { min-height: 0; overflow-y: auto; }

@@ -1,3 +1,4 @@
+import type { RoomDisplayMode } from "./room-3d";
 import { GolaCutsDialog } from "./gola-cuts-dialog";
 import { LibraryFolderTree, LibraryElementCard } from "./library-browser-parts";
 import { libraryDisplayPath, libraryFolders, libraryChildren, libraryMatches, libraryItemKind, type LibraryKind } from "../lib/corpus-library-browser";
@@ -206,6 +207,10 @@ export function App() {
   const [groupSelection, setGroupSelection] = useState<readonly number[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [roomDisplayMode, setRoomDisplayMode] = useState<RoomDisplayMode>("decor");
+  const [showRoomBridges, setShowRoomBridges] = useState(true);
+  const [printImage, setPrintImage] = useState<string | null>(null);
+  const captureRoomRef = useRef<((dataUrl: string) => void) | null>(null);
   const [viewMode, setViewMode] = useState<"data" | "drawing" | "threeD" | "room" | "cutlist">("threeD");
   const [libraryFiles, setLibraryFiles] = useState<readonly LibraryElementFile[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -504,7 +509,7 @@ export function App() {
     setSelected(element);
     setSelectedBoardIndex(null);
     setBoardGroupSelection([]);
-    setRightTab("properties");
+    setRightTab(current => current === "room" ? "elements" : current);
   }, []);
 
   const inspectLayoutIssue = useCallback((issueElements: readonly CorpusS3dElement[]) => {
@@ -647,10 +652,47 @@ export function App() {
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
   ];
+  const canUseElement = Boolean(groupSelection.length < 2 && project && selected &&
+    findCorpusElementPath(project.inspection.elements, selected)?.length === 1);
+  const canInsertElement = project?.inspection.format === "corpus-s3d";
+  const chooseDisplay = (mode: RoomDisplayMode) => {
+    setRoomDisplayMode(mode);
+    setViewMode("threeD");
+  };
+  const saveViewImage = () => {
+    captureRoomRef.current = (dataUrl) => {
+      const link = document.createElement("a");
+      link.download = `${project!.fileName.replace(/\.[^.]+$/, "")}-3D.png`;
+      link.href = dataUrl;
+      link.click();
+    };
+  };
   const chrome = <DesktopHeader menus={menus}>
-    <DesktopTool label="Novi projekat" icon="new" onClick={newDesktopProject} /><DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} /><DesktopTool label="Sačuvaj radnu kopiju" icon="save" disabled={!project?.dirty} onClick={exportWorkingCopy} /><span className="desktop-toolbar-separator" />
-    <DesktopTool label="Poništi" icon="undo" disabled={!project?.history.length} onClick={undoWorkingCopy} /><DesktopTool label="Ponovi" icon="redo" disabled={!project?.future.length} onClick={redoWorkingCopy} /><span className="desktop-toolbar-separator" />
-    <DesktopTool label="3D prostorija" icon="room" disabled={!project} active={viewMode === "threeD"} onClick={() => setViewMode("threeD")} /><DesktopTool label="Tehnički nacrt" icon="drawing" disabled={!project} active={viewMode === "drawing"} onClick={() => setViewMode("drawing")} /><DesktopTool label="Biblioteka elemenata" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openLibrary} /><DesktopTool label="Biblioteka okova" icon="library" disabled={project?.inspection.format !== "corpus-s3d"} onClick={openHardwareLibrary} /><DesktopTool label="Materijali i krojna lista" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} /><DesktopTool label="Postavke prostorije" icon="settings" disabled={!project} onClick={() => setRightTab("room")} />
+    <DesktopTool label="Novi projekat" icon="new" onClick={newDesktopProject} />
+    <DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} />
+    <DesktopTool label="Snimi projekat – radna kopija" icon="save" disabled={!project} onClick={exportWorkingCopy} />
+    <DesktopTool label="Učitaj element – E3D" icon="library" disabled={!canInsertElement} onClick={() => e3dImportInputRef.current?.click()} />
+    <DesktopTool label="Snimi element" icon="saveElement" disabled={!canUseElement} onClick={exportSelectedE3d} />
+    <DesktopTool label="Štampaj" icon="print" disabled={!project || viewMode !== "threeD"} onClick={() => {
+      captureRoomRef.current = setPrintImage;
+    }} />
+    <details className="desktop-print-options">
+      <summary aria-label="Opcije štampe" title="Opcije štampe">▾</summary>
+      <div>
+        <button disabled={!project || viewMode !== "threeD"} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); saveViewImage(); }}>Spremi sliku</button>
+        <button disabled title="Corpus predlošci još nisu podržani">Predlošci</button>
+        <button disabled title="Corpus Meta report još nije podržan">Meta report</button>
+      </div>
+    </details>
+    <span className="desktop-toolbar-separator" />
+    <DesktopTool label="Poništi" icon="undo" disabled={!project?.history.length} onClick={undoWorkingCopy} />
+    <DesktopTool label="Dupliraj" icon="duplicate" disabled={!canUseElement || !canInsertElement} onClick={() => duplicateImportedElement()} />
+    <span className="desktop-toolbar-separator" />
+    <DesktopTool label="Linije + bušenja" icon="drilling" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "drilling"} onClick={() => chooseDisplay("drilling")} />
+    <DesktopTool label="Linije" icon="lines" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "lines"} onClick={() => chooseDisplay("lines")} />
+    <DesktopTool label="Prikaz kantova" icon="kant" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "edge-check"} onClick={() => chooseDisplay("edge-check")} />
+    <DesktopTool label="Dekori" icon="decor" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "decor"} onClick={() => chooseDisplay("decor")} />
+    <DesktopTool label="Bridovi" icon="bridges" disabled={!project || viewMode !== "threeD"} active={showRoomBridges} onClick={() => setShowRoomBridges((value) => !value)} />
   </DesktopHeader>;
   const startup = startupOpen && <StartProjectWindow recent={recentProjects} onNew={newDesktopProject} onOpen={() => inputRef.current?.click()} onRecent={openRecentProject} onClose={() => setStartupOpen(false)}>
 
@@ -662,10 +704,6 @@ export function App() {
   if (!project) return <div className="app-shell corpus-desktop empty-desktop" onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }} onDrop={(event) => { if (!event.dataTransfer.files.length) return; event.preventDefault(); void openFile(event.dataTransfer.files[0]); }}>{chrome}<div className="desktop-empty-stage"><nav className="tool-rail" aria-label="Dodatne alatke"><DesktopTool label="Početni prozor" icon="new" variant="twotone" onClick={() => { activateWindow("start"); setStartupOpen(true); }} /><DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} /></nav><div className="desktop-empty-canvas"><span>IVERTIM</span></div><aside className="desktop-empty-panel"><div role="tablist" aria-label="Desni panel"><button role="tab" aria-selected={rightTab === "elements"} onClick={() => setRightTab("elements")}>Elementi</button><button role="tab" aria-selected={rightTab === "room"} onClick={() => setRightTab("room")}>Soba</button></div><p>{rightTab === "room" ? "Napravi ili učitaj projekat za postavke sobe." : "Nema otvorenog projekta."}</p></aside></div>{startup}{help}<input hidden ref={inputRef} type="file" accept=".s3d,.e3d" onChange={(event) => openFile(event.target.files?.[0])} /><footer className="statusbar"><span>Spremno</span><span>Lokalna radna površina</span></footer></div>;
 
   const allElements = flattenCorpusS3dElements(project.inspection.elements);
-  const normalizedRootQuery = query.trim().toLocaleLowerCase("sr");
-  const visibleRootIndexes = project.inspection.elements.map((element, index) => ({ element, index }))
-    .filter(({ element }) => !normalizedRootQuery || elementMatches(element, normalizedRootQuery))
-    .map(({ index }) => index);
   const selectedPath = selected ? findCorpusElementPath(project.inspection.elements, selected) : null;
   const selectedIsRoot = selectedPath?.length === 1;
   const selectedCanCopy = project.inspection.format === "corpus-s3d" && selectedIsRoot;
@@ -717,22 +755,56 @@ export function App() {
 
   function moveElementIn3D(target: CorpusS3dElement, position: CorpusPosition) {
     if (!corpusElementAllowsModeling(target)) return;
-    const patch = geometryPatchAt(target, position);
-    if (!patch) return;
-    const { elements, updated } = updateCorpusElement(project!.inspection.elements, target, patch);
+    if (!position.every(Number.isFinite)) return;
+    const { elements, updated } = replaceCorpusElement(project!.inspection.elements, target, { ...target, position });
     if (!updated) return;
     setProject((current) => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements }, dirty: true } : current);
     setSelected(updated);
     setSelectedBoardIndex(null);
   }
 
+  function selectTreeRow(element: CorpusS3dElement, boardIndex: number | null, extend: boolean) {
+    const elements = project!.inspection.elements;
+    const index = elements.indexOf(element);
+    const selectedIndex = selected ? elements.indexOf(selected) : -1;
+    const previous = groupSelection.length ? groupSelection : selectedIndex >= 0 ? [selectedIndex] : [];
+
+    if (extend && index >= 0 && boardIndex === null) {
+      const indexes = previous.includes(index) ? previous.filter(item => item !== index) : [...previous, index];
+      setGroupSelection(indexes.length > 1 ? indexes : []);
+      setSelected(indexes.includes(index) ? element : elements[indexes.at(-1) ?? -1] ?? null);
+    } else {
+      setGroupSelection([]);
+      setSelected(element);
+    }
+    setSelectedBoardIndex(boardIndex);
+    setBoardGroupSelection([]);
+  }
+
+  function renameTreeElement(element: CorpusS3dElement, name: string) {
+    if (!project || !name || name === element.name || !corpusElementAllowsModeling(element)) return;
+    const result = updateCorpusElementIdentity(project.inspection.elements, element, { ...element, name });
+    applyTreeElements(result.elements);
+  }
+
+  function setTreeBoardVisibility(element: CorpusS3dElement, boardIndex: number, visible: boolean) {
+    const board = element.boards[boardIndex];
+    if (!project || !board || (board.visible !== false) === visible) return;
+    const result = updateCorpusBoardAppearance(project.inspection.elements, element, boardIndex, { ...board, visible });
+    applyTreeElements(result.elements);
+  }
+
+  function applyTreeElements(elements: readonly CorpusS3dElement[]) {
+    if (!project) return;
+    const path = selected ? findCorpusElementPath(project.inspection.elements, selected) : null;
+    setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: [...elements] }, dirty: true } : current);
+    if (path) setSelected(corpusElementAtPath(elements, path));
+  }
+
   function setTreeElementVisibility(element: CorpusS3dElement, visible: boolean) {
     if (!project || (element.visible !== false) === visible) return;
-    const selectionPath = selected ? findCorpusElementPath(project.inspection.elements, selected) : null;
-    const result = updateCorpusElementIdentity(project.inspection.elements, element, { name: element.name, code: element.code, className: element.className, editable: element.editable, locked: element.locked, visible });
-    if (!result.updated) return;
-    setProject(current => current ? { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: result.elements }, dirty: true } : current);
-    setSelected(selectionPath ? corpusElementAtPath(result.elements, selectionPath) : null);
+    const result = updateCorpusElementIdentity(project.inspection.elements, element, { ...element, visible });
+    applyTreeElements(result.elements);
   }
 
   function updateSelectedElementIdentity(patch: ElementIdentityPatch) {
@@ -1605,10 +1677,13 @@ export function App() {
     }
     const path = findCorpusElementPath(project!.inspection.elements, selected);
     const originalCount = project!.originalInspection.elements.length;
-    if (!path || path.length !== 1 || path[0]! < originalCount) return;
-    const source = project!.importedE3dSources[path[0]! - originalCount];
-    if (!source) return;
+    if (!path || path.length !== 1) return;
     try {
+      const rootIndex = path[0]!;
+      const source = rootIndex < originalCount
+        ? { sourceFile: selected.name || "Element", sourceXml: createCorpusE3dSourceFromS3d(project!.sourceXml, rootIndex), originalElement: project!.originalInspection.elements[rootIndex]! }
+        : project!.importedE3dSources[rootIndex - originalCount];
+      if (!source) return;
       const xml = writeCorpusE3dGeometryCopy(source.sourceXml, [source.originalElement], [selected]);
       const name = source.sourceFile.replace(/\.e3d$/i, "").replace(/[\\/]/g, "-");
       downloadText(`${name}-IVERTIM.E3D`, xml, "application/xml");
@@ -1948,29 +2023,40 @@ export function App() {
                 <button className="primary-command" onClick={openLibrary}>Otvori biblioteku</button>
                 <button className="secondary-button" onClick={() => { activateWindow("cabinet-generator"); setGeneratorOpen(true); }}>Napravi osnovni korpus</button>
               </div>
-            ) : <>
-            <div className="tree-group-actions">
-              <span>{groupSelection.length ? `${groupSelection.length} označeno` : "Grupni izbor"}</span>
-              {normalizedRootQuery && <button disabled={!visibleRootIndexes.length} title={visibleRootIndexes.length ? "Označi sve elemente koji odgovaraju pretrazi" : "Nema vidljivih elemenata koji odgovaraju pretrazi"} onClick={() => selectRootGroup(visibleRootIndexes)}>Označi vidljive</button>}
-              <button disabled={!project.inspection.elements.length} title={project.inspection.elements.length ? "Označi sve elemente projekta" : "Projekat nema elemenata za grupni izbor"} onClick={() => selectRootGroup(project.inspection.elements.map((_, index) => index))}>Označi sve</button>
-              <button disabled={!groupSelection.length} title={groupSelection.length ? "Očisti grupni izbor elemenata" : "Nijedan element nije označen"} onClick={() => setGroupSelection([])}>Poništi</button>
-            </div>
-            <ElementTree
-              elements={project.inspection.elements}
-              query={query}
-              selected={selected}
-              onSelect={selectElement}
-              groupSelection={groupSelection}
-              onToggleGroup={toggleGroupElement}
-              onSetVisibility={setTreeElementVisibility}
-            />
-            </>}
+            ) : (
+              <ElementTree
+                key={corpusRoomCameraSessions.key(project.originalInspection)}
+                elements={project.inspection.elements}
+                query={query}
+                selected={selected}
+                selectedBoardIndex={selectedBoardIndex}
+                groupSelection={groupSelection}
+                onSelect={selectTreeRow}
+                onSelectAll={() => {
+                  const elements = project.inspection.elements;
+                  if (!elements.length) return;
+                  selectRootGroup(elements.map((_, index) => index));
+                  setSelected(selected && elements.includes(selected) ? selected : elements[0]!);
+                  setSelectedBoardIndex(null);
+                  setBoardGroupSelection([]);
+                }}
+                onRename={renameTreeElement}
+                onSetVisibility={setTreeElementVisibility}
+                onSetBoardVisibility={setTreeBoardVisibility}
+              />
+            )}
           </div>
         </aside>
           <aside className="inspector-panel" aria-label="Svojstva izbora">
             <header><span>Svojstva</span><small>{selectedBoardIndex !== null ? "Ploča" : selected ? "Element" : "Projekat"}</small></header>
             <div className="inspector-scroll">
-              {selected ? (
+              {groupSelection.length >= 2 ? (
+                <>
+                  <div className="inspector-identity"><strong>{groupSelection.length} označenih elemenata</strong></div>
+                  <div className="inspector-actions"><button onClick={() => setGroupVisibility(true)}>Prikaži označene</button><button onClick={() => setGroupVisibility(false)}>Sakrij označene</button></div>
+                  <GroupVariableEditor key={groupSelection.join(",")} elements={selectedGroupElements} blockedReason={editorSession.current ? "Zatvori editor prije grupne primjene." : groupSelection.some(index=>index<project.originalInspection.elements.length || !project.importedE3dSources[index-project.originalInspection.elements.length]) ? "Za ovu primjenu svaki označeni element mora imati vlastiti E3D izvor. Izvorni S3D elementi nisu podržani." : undefined} onPrepare={prepareGroupVariable} onApply={applyGroupVariable} />
+                </>
+              ) : selected ? (
                 <>
                   <div className="inspector-identity">
                     <strong>{selectedBoardIndex !== null ? selected.boards[selectedBoardIndex]?.name || `Ploča ${selectedBoardIndex + 1}` : selected.name || "Neimenovan element"}</strong>
@@ -1993,7 +2079,6 @@ export function App() {
                     <ElementVariablesEditor compact element={selected} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} elementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEdit={corpusElementAllowsModeling(selected)} canChangeStructure={false} onUpdate={updateSelectedElementVariables} />
                     {!(project.inspection.format === "corpus-e3d" || isImportedRoot(project, project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected)) && <p className="inspector-help">Promjena varijabli računa podržane izraze geometrije. Rupe i obrade zadržavaju izvorne zapise.</p>}
                   </details>}
-                  {groupSelection.length >= 2 && <GroupVariableEditor key={groupSelection.join(",")} elements={selectedGroupElements} blockedReason={editorSession.current ? "Zatvori editor prije grupne primjene." : groupSelection.some(index=>index<project.originalInspection.elements.length || !project.importedE3dSources[index-project.originalInspection.elements.length]) ? "Za ovu primjenu svaki označeni element mora imati vlastiti E3D izvor. Izvorni S3D elementi nisu podržani." : undefined} onPrepare={prepareGroupVariable} onApply={applyGroupVariable} />}
                   <button className="inspector-primary" onClick={() => openDocument("data")}>{selectedBoardIndex !== null ? "Uredi ploču" : "Uredi element"}</button>
                   <div className="inspector-actions" aria-label="Osnovne radnje nad izborom">
                     {selectedBoardIndex === null && <><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° ulijevo" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(-90)}>↶ −90°</button><button disabled={!corpusElementAllowsModeling(selected)} title={corpusElementAllowsModeling(selected) ? "Rotiraj element 90° udesno" : "Element je zaključan ili nema potpunu geometriju"} onClick={() => rotateSelectedElement(90)}>↷ +90°</button></>}
@@ -2019,6 +2104,9 @@ export function App() {
               <Room3DView
                 key={corpusRoomCameraSessions.key(project.originalInspection)}
                 cameraScope={project.originalInspection}
+                displayMode={roomDisplayMode}
+                showBoardEdges={showRoomBridges}
+                captureRef={captureRoomRef}
                 elements={project.inspection.elements}
                 room={project.inspection.room}
                 selected={selected}
@@ -2045,6 +2133,10 @@ export function App() {
       </main>
 
       {documentWindows.map((kind) => <DesktopWindow key={kind} id={`document-${kind}`} title={kind === "cutlist" ? "Materijali i krojna lista" : kind === "room" ? "Postavke prostorije" : "Editor elementa"} initialMaximized={kind === "data"} className={`desktop-document-window ${kind === "data" ? "desktop-element-window" : ""}`} onClose={() => kind === "data" ? finishElementEditor(false) : setDocumentWindows((current) => current.filter((entry) => entry !== kind))}>{renderDocument(kind)}</DesktopWindow>)}
+      {printImage && <img className="desktop-print-image" src={printImage} alt="3D prikaz projekta" onLoad={() => {
+        window.print();
+        setPrintImage(null);
+      }} />}
       {startup}{help}
 
       <footer className="statusbar">
@@ -2670,51 +2762,100 @@ type ElementTreeProps = {
   elements: readonly CorpusS3dElement[];
   query: string;
   selected: CorpusS3dElement | null;
-  onSelect(element: CorpusS3dElement): void;
-  groupSelection?: readonly number[];
-  onToggleGroup?(index: number): void;
-  onSetVisibility?(element: CorpusS3dElement, visible: boolean): void;
-  parentHidden?: boolean;
-  depth?: number;
+  selectedBoardIndex: number | null;
+  groupSelection: readonly number[];
+  onSelect(element: CorpusS3dElement, boardIndex: number | null, extend: boolean): void;
+  onSelectAll(): void;
+  onRename(element: CorpusS3dElement, name: string): void;
+  onSetVisibility(element: CorpusS3dElement, visible: boolean): void;
+  onSetBoardVisibility(element: CorpusS3dElement, index: number, visible: boolean): void;
 };
 
-function ElementTree({ elements, query, selected, onSelect, groupSelection = [], onToggleGroup, onSetVisibility, parentHidden = false, depth = 0 }: ElementTreeProps) {
+function ElementTree({ elements, query, selected, selectedBoardIndex, groupSelection, onSelect, onSelectAll, onRename, onSetVisibility, onSetBoardVisibility }: ElementTreeProps) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [renamePath, setRenamePath] = useState<string | null>(null);
   const normalized = query.trim().toLocaleLowerCase("sr");
-  const visible = elements.map((element, index) => ({ element, index }))
-    .filter(({ element }) => !normalized || elementMatches(element, normalized));
+  const matches = (value: string) => value.toLocaleLowerCase("sr").includes(normalized);
+  const matchesElement = (element: CorpusS3dElement) => matches(`${element.name} ${element.code}`);
+  const matchesBranch = (element: CorpusS3dElement): boolean =>
+    matchesElement(element) || element.boards.some(board => matches(board.name)) || element.children.some(matchesBranch);
 
-  return (
-    <ul className="element-tree">
-      {visible.map(({ element, index }) => (
-        <li key={`${element.code}-${element.name}-${depth}-${index}`}>
-          <div className={`tree-row-wrap${parentHidden || element.visible === false ? " tree-row-hidden" : ""}`}>
-            <button
-              className={selected === element ? "tree-row selected" : "tree-row"}
-              style={{ paddingLeft: `${18 + depth * 18}px` }}
-              onClick={() => onSelect(element)}
-            >
-              <span className="tree-glyph">{element.children.length ? "◇" : "□"}</span>
-              <span className="tree-label"><strong>{element.name || "Neimenovan element"}</strong><small>{element.code || element.className}</small></span>
-              <span className="tree-count" title={parentHidden ? "Sakriven nadređenim elementom" : element.visible === false ? "Sakriven element" : undefined}>{parentHidden || element.visible === false ? "—" : element.boards.length || ""}</span>
-            </button>
-            <div className="tree-row-controls">
-            {onSetVisibility && <input className="tree-visibility" type="checkbox" aria-label={`Vidljivost elementa ${element.name || "Neimenovan element"}`} checked={element.visible !== false} title={parentHidden ? "Sakriven nadređenim elementom. Ovo polje čuva sopstvenu vidljivost pod-elementa." : "Uključi/isključi element u prikazu i proizvodnim listama. Element ostaje u projektu; Poništi vraća promjenu."} onChange={event => onSetVisibility(element, event.target.checked)} />}
-            {depth === 0 && onToggleGroup && <button className={groupSelection.includes(index) ? "tree-multi-toggle active" : "tree-multi-toggle"} aria-label={`${groupSelection.includes(index) ? "Ukloni" : "Dodaj"} ${element.name || "element"} ${groupSelection.includes(index) ? "iz" : "u"} grupni izbor`} aria-pressed={groupSelection.includes(index)} title="Označi za grupno pomjeranje i poravnanje" onClick={() => onToggleGroup(index)}>{groupSelection.includes(index) ? "✓" : "+"}</button>}
-            </div>
-          </div>
-          {element.children.length > 0 && (
-            <ElementTree elements={element.children} query={query} selected={selected} onSelect={onSelect} onSetVisibility={onSetVisibility} parentHidden={parentHidden || element.visible === false} depth={depth + 1} />
-          )}
-        </li>
-      ))}
-      {!visible.length && depth === 0 && <li className="no-results">Nema elemenata za ovu pretragu.</li>}
-    </ul>
-  );
-}
+  function eye(name: string, visible: boolean, parentHidden: boolean, onClick: () => void) {
+    const label = visible ? `Sakrij ${name}` : `Prikaži ${name}`;
+    return <button type="button" className="tree-eye" title={parentHidden ? `${label} · nadređeni element je skriven` : label} aria-label={label} onClick={onClick}>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" /><circle cx="12" cy="12" r="2.6" />{(!visible || parentHidden) && <path d="M4 4l16 16" />}
+      </svg>
+    </button>;
+  }
 
-function elementMatches(element: CorpusS3dElement, query: string): boolean {
-  return `${element.name} ${element.code} ${element.className}`.toLocaleLowerCase("sr").includes(query)
-    || element.children.some((child) => elementMatches(child, query));
+  function list(items: readonly CorpusS3dElement[], parentPath: string, parentHidden: boolean, filter: boolean) {
+    return <ul className="element-tree">{items.map((element, index) => {
+      if (filter && !matchesBranch(element)) return null;
+      const path = `${parentPath}/${index}`;
+      const name = element.name || "Neimenovan element";
+      const visible = element.visible !== false;
+      const hidden = parentHidden || !visible;
+      const hasChildren = element.children.length > 0 || element.boards.length > 0;
+      const filterChildren = filter && !matchesElement(element);
+      const isExpanded = expanded.has(path) || (filterChildren && hasChildren);
+      const active = parentPath === "" && groupSelection.length > 1
+        ? groupSelection.includes(index)
+        : selected === element && selectedBoardIndex === null;
+      const canRename = groupSelection.length < 2 && corpusElementAllowsModeling(element);
+      return <li key={path}>
+        <div className={`tree-row-wrap${hidden ? " tree-row-hidden" : ""}${active ? " tree-row-active" : ""}`}>
+          {hasChildren ? <button type="button" className="tree-expand" aria-expanded={isExpanded} aria-label={`${isExpanded ? "Skupi" : "Raširi"} ${name}`} disabled={filterChildren} onClick={() => setExpanded(current => {
+            const next = new Set(current);
+            if (next.has(path)) next.delete(path);
+            else next.add(path);
+            return next;
+          })}>{isExpanded ? "−" : "+"}</button> : <span />}
+          {renamePath === path && canRename ? <input className="tree-rename" autoFocus defaultValue={element.name} aria-label={`Novi naziv za ${name}`}
+            onFocus={event => event.currentTarget.select()} onBlur={() => setRenamePath(null)}
+            onKeyDown={event => {
+              if (event.key === "Enter") {
+                onRename(element, event.currentTarget.value.trim());
+                setRenamePath(null);
+              } else if (event.key === "Escape") {
+                event.stopPropagation();
+                setRenamePath(null);
+              }
+            }} /> : <button type="button" className="tree-row" aria-pressed={active}
+              title={canRename ? `${name} · dvoklik ili F2 za preimenovanje` : name}
+              onClick={event => onSelect(element, null, event.ctrlKey || event.metaKey)}
+              onDoubleClick={() => { if (canRename) setRenamePath(path); }}
+              onKeyDown={event => { if (canRename && event.key === "F2") { event.preventDefault(); setRenamePath(path); } }}>
+              <strong>{name}</strong>
+            </button>}
+          {eye(name, visible, parentHidden, () => onSetVisibility(element, !visible))}
+        </div>
+        {isExpanded && hasChildren && <>
+          {element.children.length > 0 && list(element.children, path, hidden, filterChildren)}
+          {element.boards.length > 0 && <ul className="element-tree tree-board-list">{element.boards.map((board, boardIndex) => {
+            if (filterChildren && !matches(board.name)) return null;
+            const boardName = board.name || `Daska ${boardIndex + 1}`;
+            const shown = board.visible !== false;
+            const boardActive = selected === element && selectedBoardIndex === boardIndex;
+            return <li key={boardIndex} className={`tree-row-wrap${hidden || !shown ? " tree-row-hidden" : ""}${boardActive ? " tree-row-active" : ""}`}>
+              <span /><button type="button" className="tree-row" aria-pressed={boardActive} onClick={() => onSelect(element, boardIndex, false)}>{boardName}</button>
+              {eye(boardName, shown, hidden, () => onSetBoardVisibility(element, boardIndex, !shown))}
+            </li>;
+          })}</ul>}
+        </>}
+      </li>;
+    })}</ul>;
+  }
+
+  return <div className="project-element-tree" onKeyDown={event => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "a" && !isEditableTarget(event.target)) {
+      event.preventDefault();
+      event.stopPropagation();
+      onSelectAll();
+    }
+  }}>
+    {normalized && !elements.some(matchesBranch) ? <p className="no-results">Nema elemenata ni dasaka za ovu pretragu.</p> : list(elements, "", false, Boolean(normalized))}
+  </div>;
 }
 
 type ElevationViewProps = {
