@@ -82,3 +82,13 @@ test("grupiše jedinstvene elemente problema za 3D oznake", () => {
   assert.deepEqual(problems.outsideRoom, project.elements.slice(0, 2));
   assert.deepEqual(problems.overlapping, project.elements.slice(0, 2));
 });
+
+test("izlazak iz prostorije se mjeri po stvarnim daskama, ne po nominalnoj kutiji elementa", () => {
+  // Zidna obloga: EZPOS=0 i dubina 640, ali je daska okrenuta oko X pa stoji uspravno uz zid (Z 0..10, Y 880..1520).
+  const worktop = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="Z.O." EXPOX="778" EYPOS="880" EZPOS="0" ESIRINA="3584" EVISINA="10" EDUBINA="640"><DASKE><AD DNAME="Radna" DXPOS="0" DYPOS="0" DZPOS="0" VISINA="3584" DUBINA="640" DEBLJINA="10" SMJER="2" XKUT="90"/></DASKE></ELEMENT></PROJECTFILE>`);
+  assert.deepEqual(analyzeCorpusLayout(worktop.elements, room), []);
+
+  // Ista daska stvarno izlazi kada je element pomjeren preko granice sobe (Z > 4000).
+  const beyond = parseCorpusS3d(`<PROJECTFILE VER="17"><SOBA/><ELEMENT ENAME="Van" EXPOX="778" EYPOS="880" EZPOS="4100" ESIRINA="3584" EVISINA="10" EDUBINA="640"><DASKE><AD DNAME="Radna" DXPOS="0" DYPOS="0" DZPOS="0" VISINA="3584" DUBINA="640" DEBLJINA="10" SMJER="2" XKUT="90"/></DASKE></ELEMENT></PROJECTFILE>`);
+  assert.equal(analyzeCorpusLayout(beyond.elements, room).filter(({ type }) => type === "outside-room").length, 1);
+});

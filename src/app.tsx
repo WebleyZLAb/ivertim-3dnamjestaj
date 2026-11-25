@@ -61,13 +61,16 @@ import { analyzeCorpusMacroPayload, decodeCorpusText, type CorpusMacroAnalysis }
 import { corpusCmkDocumentFromDecodedPayloads, parseCorpusCmk, type CorpusCmkDocument } from "../lib/corpus-cmk";
 import { corpusMacroBoardContext, simulateCorpusCmk, type CorpusCmkOperationKind } from "../lib/corpus-cmk-simulation";
 import { resolveCorpusSawPaths, type CorpusSawResolution } from "../lib/corpus-saw";
-import { activeLocalCorpusCatalogs, createCorpusMaterialIndex, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
+import { activeLocalCorpusCatalogs, createCorpusMaterialIndex, matchCorpusMaterial, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
 import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoardLocalContactRectangle } from "../lib/corpus-board-contact";
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
 import { assertCorpusWorkingCopyChanges, applyCorpusWorkingCopyProject, corpusElementAtPath, createCorpusWorkingCopyFile, findCorpusElementPath, replaceCorpusElement, updateCorpusBoard, updateCorpusBoardAppearance, updateCorpusBoardHoles, updateCorpusElement, updateCorpusElementIdentity, updateCorpusRoom, type BoardAppearancePatch, type BoardGeometryPatch, type ElementGeometryPatch, type ElementIdentityPatch, type ElementVariablesPatch, type RoomGeometryPatch } from "../lib/corpus-model";
 import { createCorpusRecoverySnapshot, type CorpusRecoverySnapshot } from "../lib/corpus-recovery";
 import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dBoard, duplicateCorpusE3dBoardCopies, duplicateCorpusE3dBoards, moveCorpusE3dBoard, positionCorpusE3dBoard, removeCorpusE3dBoard, removeCorpusE3dBoards, renameCorpusE3dBoard, replaceCorpusE3dBoardContour, replaceCorpusE3dBoardEdgeBanding, replaceCorpusE3dElementVariables, writeCorpusE3dGeometryCopy, writeCorpusS3dWithImportedElements, type CorpusE3dImportSource, type CorpusEdgeBandingSpec, type CorpusNewBoardSpec, type CorpusStraightContourPoint } from "../lib/corpus-s3d-writer";
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
+import { SaveElementDialog, type SaveElementRequest } from "./save-element-dialog";
+import { UsedMaterialWindow } from "./used-material-window";
+import { buildCorpusUsedMaterial } from "../lib/corpus-used-material";
 import { clearCorpusRecovery, loadCorpusRecovery, saveCorpusRecovery } from "./recovery-store";
 
 const Room3DView = lazy(() => import("./room-3d").then((module) => ({ default: module.Room3DView })));
@@ -147,6 +150,7 @@ type MaterialResolution =
 type LibraryElementFile = Pick<File, "name" | "webkitRelativePath" | "text" | "size">;
 type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
 const LocalCorpusContext = createContext<LocalCorpusLibrary | null>(null);
+const DEFAULT_WALL_COLOR = "#ffffff";
 const localCorpusUrl = (path: string) => "/local-corpus/" + path.split("/").map(encodeURIComponent).join("/");
 const MaterialLibraryContext = createContext<LoadedMaterialLibrary | null>(null);
 
@@ -207,8 +211,13 @@ export function App() {
   const [groupSelection, setGroupSelection] = useState<readonly number[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [usedMaterialOpen, setUsedMaterialOpen] = useState(false);
+  const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
+  const [saveElement, setSaveElement] = useState<{ xml: string; name: string; libraryPath: string | null; busy: boolean; message: string | null } | null>(null);
   const [roomDisplayMode, setRoomDisplayMode] = useState<RoomDisplayMode>("decor");
   const [showRoomBridges, setShowRoomBridges] = useState(true);
+  const [wallColor, setWallColor] = useState(() => { try { return localStorage.getItem("ivertim.wallColor") || DEFAULT_WALL_COLOR; } catch { return DEFAULT_WALL_COLOR; } });
+  const changeWallColor = (value: string) => { setWallColor(value); try { localStorage.setItem("ivertim.wallColor", value); } catch { /* boja se samo ne pamti */ } };
   const [printImage, setPrintImage] = useState<string | null>(null);
   const captureRoomRef = useRef<((dataUrl: string) => void) | null>(null);
   const [viewMode, setViewMode] = useState<"data" | "drawing" | "threeD" | "room" | "cutlist">("threeD");
@@ -269,8 +278,21 @@ export function App() {
       .filter((file) => !needle || libraryFilePath(file).toLocaleLowerCase().includes(needle))
       .slice(0, 100);
   }, [macroFiles, macroQuery]);
+  const materialIndex = useMemo(() => materialLibrary ? createCorpusMaterialIndex(materialLibrary.catalogs) : null, [materialLibrary]);
+  const usedMaterial = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedMaterial(project.inspection.elements, (uid, name) => {
+    const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
+    return match && "record" in match ? match.record.name : name || uid;
+  }) : null, [project, usedMaterialOpen, materialIndex]);
   const layoutIssues = useMemo(() => project ? analyzeCorpusLayout(project.inspection.elements, project.inspection.room) : [], [project]);
   const layoutProblemElements = useMemo(() => project ? corpusLayoutProblemElements(layoutIssues, project.inspection.elements) : { outsideRoom: [], overlapping: [] }, [layoutIssues, project]);
+  // Pod sobe: dekor iz Corpus foldera Podovi (CORPUS_FLOORING), po PNAME materijala poda u S3D-u.
+  const floorTextureUrl = useMemo(() => {
+    const floorName = /<SOBA[^>]*PNAME="([^"]*)"/.exec(project?.sourceXml ?? "")?.[1];
+    const code = floorName ? /(CF_\d+[A-Za-z]*)$/.exec(floorName)?.[1]?.toUpperCase() : undefined;
+    if (!code || !localCorpus) return null;
+    const path = localCorpus.files.find((file) => /\.(jpe?g|png)$/i.test(file) && file.split("/").at(-1)!.replace(/\.\w+$/, "").toUpperCase() === code);
+    return path ? localCorpusUrl(path) : null;
+  }, [project?.sourceXml, localCorpus]);
   const cutList = useMemo(() => buildCorpusCutList(project?.inspection.elements ?? []), [project]);
   const consumablesList = useMemo(() => buildCorpusConsumablesList(project?.inspection.elements ?? []), [project]);
   const selectedGroupElements = useMemo(() => project ? groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean) : [], [project, groupSelection]);
@@ -647,7 +669,7 @@ export function App() {
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
     { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
-    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
+    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
     { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
@@ -672,7 +694,7 @@ export function App() {
     <DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} />
     <DesktopTool label="Snimi projekat – radna kopija" icon="save" disabled={!project} onClick={exportWorkingCopy} />
     <DesktopTool label="Učitaj element – E3D" icon="library" disabled={!canInsertElement} onClick={() => e3dImportInputRef.current?.click()} />
-    <DesktopTool label="Snimi element" icon="saveElement" disabled={!canUseElement} onClick={exportSelectedE3d} />
+    <DesktopTool label="Spremi element" icon="saveElement" disabled={!canUseElement} onClick={openSaveElement} />
     <DesktopTool label="Štampaj" icon="print" disabled={!project || viewMode !== "threeD"} onClick={() => {
       captureRoomRef.current = setPrintImage;
     }} />
@@ -690,6 +712,7 @@ export function App() {
     <span className="desktop-toolbar-separator" />
     <DesktopTool label="Linije + bušenja" icon="drilling" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "drilling"} onClick={() => chooseDisplay("drilling")} />
     <DesktopTool label="Linije" icon="lines" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "lines"} onClick={() => chooseDisplay("lines")} />
+    <DesktopTool label="Linije bez nevidljivih" icon="solidLines" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "solid-lines"} onClick={() => chooseDisplay("solid-lines")} />
     <DesktopTool label="Prikaz kantova" icon="kant" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "edge-check"} onClick={() => chooseDisplay("edge-check")} />
     <DesktopTool label="Dekori" icon="decor" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "decor"} onClick={() => chooseDisplay("decor")} />
     <DesktopTool label="Bridovi" icon="bridges" disabled={!project || viewMode !== "threeD"} active={showRoomBridges} onClick={() => setShowRoomBridges((value) => !value)} />
@@ -1669,27 +1692,72 @@ export function App() {
     }
   }
 
-  function exportSelectedE3d() {
-    if (!selected) return;
+  /** XML odabranog elementa kao E3D i, ako je element učitan iz biblioteke, njegova putanja u biblioteci. */
+  function selectedE3dForSave(): { xml: string; name: string; libraryPath: string | null } | null {
+    if (!selected) return null;
+    const known = new Set(localCorpus?.elements ?? []);
+    const inLibrary = (value: string | undefined) => value && known.has(value.replaceAll("\\", "/")) ? value.replaceAll("\\", "/") : null;
     if (project!.inspection.format === "corpus-e3d") {
-      exportS3dCopy();
-      return;
+      const source = project!.standaloneE3dSource;
+      if (!source) throw new Error("Samostalni E3D izvor nije dostupan.");
+      return {
+        xml: writeCorpusE3dGeometryCopy(source.sourceXml, [source.originalElement], project!.inspection.elements),
+        name: project!.fileName.replace(/\.(?:s3d|e3d)$/i, ""),
+        libraryPath: inLibrary(source.sourceFile),
+      };
     }
     const path = findCorpusElementPath(project!.inspection.elements, selected);
     const originalCount = project!.originalInspection.elements.length;
-    if (!path || path.length !== 1) return;
+    if (!path || path.length !== 1) return null;
+    const rootIndex = path[0]!;
+    const source = rootIndex < originalCount
+      ? { sourceFile: selected.name || "Element", sourceXml: createCorpusE3dSourceFromS3d(project!.sourceXml, rootIndex), originalElement: project!.originalInspection.elements[rootIndex]! }
+      : project!.importedE3dSources[rootIndex - originalCount];
+    if (!source) return null;
+    return {
+      xml: writeCorpusE3dGeometryCopy(source.sourceXml, [source.originalElement], [selected]),
+      name: source.sourceFile.split(/[\/]/).at(-1)!.replace(/\.e3d$/i, ""),
+      libraryPath: rootIndex < originalCount ? null : inLibrary(source.sourceFile),
+    };
+  }
+
+  function openSaveElement() {
     try {
-      const rootIndex = path[0]!;
-      const source = rootIndex < originalCount
-        ? { sourceFile: selected.name || "Element", sourceXml: createCorpusE3dSourceFromS3d(project!.sourceXml, rootIndex), originalElement: project!.originalInspection.elements[rootIndex]! }
-        : project!.importedE3dSources[rootIndex - originalCount];
-      if (!source) return;
-      const xml = writeCorpusE3dGeometryCopy(source.sourceXml, [source.originalElement], [selected]);
-      const name = source.sourceFile.replace(/\.e3d$/i, "").replace(/[\\/]/g, "-");
-      downloadText(`${name}-IVERTIM.E3D`, xml, "application/xml");
+      const prepared = selectedE3dForSave();
+      if (!prepared) return;
+      setLibraryNotice(null);
+      setSaveElement({ ...prepared, busy: false, message: null });
       setError(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Izabrani E3D nije moguće izvesti.");
+      setError(reason instanceof Error ? reason.message : "Izabrani E3D nije moguće pripremiti.");
+    }
+  }
+
+  function downloadSelectedE3d() {
+    if (!saveElement) return;
+    downloadText(`${saveElement.name.replace(/[\/]/g, "-")}-IVERTIM.E3D`, saveElement.xml, "application/xml");
+    setSaveElement(null);
+  }
+
+  async function saveSelectedToLibrary(request: SaveElementRequest) {
+    if (!saveElement) return;
+    setSaveElement({ ...saveElement, busy: true, message: null });
+    try {
+      const response = await fetch("/__ivertim/library/save-element", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: request.path, xml: saveElement.xml, overwrite: request.overwrite }),
+      });
+      const result = await response.json().catch(() => ({})) as { path?: string; error?: string };
+      if (!response.ok || !result.path) throw new Error(result.error ?? "Upis u biblioteku nije uspio. Program mora biti pokrenut lokalno.");
+      const saved = result.path;
+      setLocalCorpus((current) => current && !current.elements.includes(saved) ? { ...current, elements: [...current.elements, saved].sort((a, b) => a.localeCompare(b, "sr")), files: [...current.files, saved] } : current);
+      setLibraryFiles((current) => current.some((file) => libraryFilePath(file) === saved) ? current : [...current, { name: saved.split("/").at(-1)!, webkitRelativePath: saved, size: 0,
+        text: async () => { const reply = await fetch(localCorpusUrl(saved)); if (!reply.ok) throw new Error("Element nije dostupan: " + saved); return decodeCorpusTextDocument(new Uint8Array(await reply.arrayBuffer())).text; } }]);
+      setSaveElement(null);
+      setLibraryNotice(`Element je spremljen u biblioteku: ${saved}`);
+    } catch (reason) {
+      setSaveElement((current) => current ? { ...current, busy: false, message: reason instanceof Error ? reason.message : "Upis u biblioteku nije uspio." } : current);
     }
   }
 
@@ -1870,11 +1938,11 @@ export function App() {
   }
 
   const renderDocument = (mode: "data" | "room" | "cutlist") => <>          {mode === "room" ? (
-            <RoomEditor room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} />
+            <RoomEditor wallColor={wallColor} onWallColor={changeWallColor} room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} />
           ) : mode === "cutlist" ? (
             <CutListView csvOptions={cutListCsvOptions} onCsvOptionsChange={setCutListCsvOptions} elements={project.inspection.elements} groupElements={selectedGroupElements} result={cutList} consumables={consumablesList} groupResult={groupCutList} groupConsumables={groupConsumablesList} groupCount={selectedGroupElements.length} onExport={exportCutList} onExportConsumables={exportConsumables} />
           ) : (
-            selected ? <ElementDetails onAddBoards={addBoardsToSelectedElement} canRedo={project.future.length > 0} onRedo={redoWorkingCopy} onAccept={() => finishElementEditor(true)} onCancel={() => finishElementEditor(false)} key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardFormulas={updateSelectedBoardFormulas} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} formulaElementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEditFormulas={Boolean(structuredE3dTarget(undefined,true))} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onRenameBoard={renameSelectedBoard} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={exportSelectedE3d} canChangeStructure={Boolean(structuredE3dTarget())} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected))} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => { finishElementEditor(true); openDocument("cutlist"); }} /> : <EmptyDetails />
+            selected ? <ElementDetails onAddBoards={addBoardsToSelectedElement} canRedo={project.future.length > 0} onRedo={redoWorkingCopy} onAccept={() => finishElementEditor(true)} onCancel={() => finishElementEditor(false)} key={findCorpusElementPath(project.inspection.elements, selected)?.join(".") ?? selected.name} element={selected} room={project.inspection.room} placementElements={project.inspection.elements} groupSelection={groupSelection} canEdit={corpusElementAllowsModeling(selected)} canTransformGroup={groupSelection.length >= 2 && groupSelection.every((index) => corpusElementAllowsModeling(project.inspection.elements[index]!))} onTranslateGroup={translateGroup} onPositionGroup={positionGroup} onAlignGroup={alignGroup} onDistributeGroup={distributeGroup} onSpaceGroup={spaceGroup} onRotateGroup={rotateGroup} onContainGroup={containGroup} onCenterGroup={centerGroup} onPlaceGroupAtRoomSide={placeGroupAtRoomSide} onSnapGroup={snapGroup} onDuplicateGroup={duplicateGroup} onDuplicateGroupGrid={duplicateGroupGrid} onRemoveGroup={removeGroup} canRemoveGroup={groupSelection.length >= 2 && groupSelection.every((index) => index >= project.originalInspection.elements.length && corpusElementAllowsModeling(project.inspection.elements[index]!))} onSetGroupVisibility={setGroupVisibility} onIsolateGroup={isolateGroup} onShowAllRoots={showAllRootElements} onClearGroup={() => setGroupSelection([])} selectedBoardIndex={selectedBoardIndex} boardSelection={boardGroupSelection} onBoardSelectionChange={setBoardGroupSelection} onSelectBoard={setSelectedBoardIndex} onUpdate={updateSelectedElement} onFitToBoards={fitSelectedElementToBoards} onUpdateIdentity={updateSelectedElementIdentity} onUpdateVariables={updateSelectedElementVariables} onUpdateBoard={updateSelectedBoard} onUpdateBoardFormulas={updateSelectedBoardFormulas} formulaRoot={project.inspection.elements[selectedPath?.[0] ?? 0] ?? selected} formulaElementPath={[0,...(selectedPath?.slice(1) ?? [])]} canEditFormulas={Boolean(structuredE3dTarget(undefined,true))} onUpdateBoardAppearance={updateSelectedBoardAppearance} onUpdateBoardHoles={updateSelectedBoardHoles} onUpdateBoardContour={updateSelectedBoardContour} onUpdateBoardEdgeBanding={updateSelectedBoardEdgeBanding} onAddBoard={addBoardToSelectedElement} onRenameBoard={renameSelectedBoard} onMoveBoard={moveSelectedBoard} onDuplicateBoard={duplicateSelectedBoard} onDuplicateBoardArray={duplicateSelectedBoardArray} onDuplicateBoardGrid={duplicateSelectedBoardGrid} onTranslateBoards={translateSelectedBoards} onDistributeBoards={distributeSelectedBoards} onAlignBoards={alignSelectedBoards} onPlaceBoards={placeSelectedBoards} onDuplicateBoards={duplicateSelectedBoards} onRemoveBoards={removeSelectedBoards} onApplyBoardAppearance={applySelectedBoardAppearance} onSetBoardsVisibility={setSelectedBoardsVisibility} onDistributeBoardArray={distributeSelectedBoardArray} onRemoveBoard={removeSelectedBoard} onUndo={undoWorkingCopy} onRemoveImported={removeImportedElement} onDuplicateImported={duplicateImportedElement} onExportSelectedE3d={openSaveElement} canChangeStructure={Boolean(structuredE3dTarget())} canRemoveImported={isImportedRoot(project, selected) && corpusElementAllowsModeling(selected)} canExportE3d={selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected))} canDuplicate={project.inspection.format === "corpus-s3d" && Boolean(findCorpusElementPath(project.inspection.elements, selected)?.length === 1)} canUndo={project.history.length > 0} onOpenProduction={() => { finishElementEditor(true); openDocument("cutlist"); }} /> : <EmptyDetails />
           )}
 </>;
 
@@ -1936,6 +2004,8 @@ export function App() {
       )}
 
       {scriptLibraryOpen && localCorpus && <CorpusScriptLibrary library={localCorpus} onClose={() => setScriptLibraryOpen(false)} />}
+      {usedMaterialOpen && usedMaterial && <DesktopWindow id="used-material" title="Utrošeni materijal" className="desktop-document-window" onClose={() => setUsedMaterialOpen(false)}><UsedMaterialWindow used={usedMaterial} onOpenCutList={() => openDocument("cutlist")} /></DesktopWindow>}
+      {saveElement && <DesktopWindow id="save-element" title="Spremi element" onClose={() => setSaveElement(null)}><SaveElementDialog existingPath={saveElement.libraryPath} defaultName={saveElement.name} libraryElements={localCorpus?.elements ?? []} busy={saveElement.busy} message={saveElement.message} onSave={saveSelectedToLibrary} onDownload={downloadSelectedE3d} onCancel={() => setSaveElement(null)} /></DesktopWindow>}
       {materialReplacementOpen && materialLibrary && <DesktopWindow id="material-replacement" title="Provjera i zamjena materijala" className="desktop-document-window" onClose={() => setMaterialReplacementOpen(false)}><MaterialReplacement elements={project.inspection.elements} catalogs={materialLibrary.catalogs} onReplace={replaceProjectMaterial} /></DesktopWindow>}
       {macroLibraryOpen && (
         <DesktopWindow id="macros" title="Biblioteka makroa" className="desktop-library-window" onClose={() => setMacroLibraryOpen(false)}><div className="library-backdrop">
@@ -2087,7 +2157,7 @@ export function App() {
                     {selectedBoardIndex !== null && selectedBoardCanChange && <button onClick={() => duplicateSelectedBoard(selectedBoardIndex)}>Kopiraj ploču</button>}
                     {selectedBoardIndex !== null && selectedBoardCanChange && selected.boards.length > 1 && <button className="danger" onClick={() => removeSelectedBoard(selectedBoardIndex)}>Ukloni ploču</button>}
                   </div>
-                  {selectedBoardIndex === null && selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && <button className="inspector-export" onClick={exportSelectedE3d}>Sačuvaj element kao E3D ↓</button>}
+                  {selectedBoardIndex === null && selectedPath?.length === 1 && (project.inspection.format === "corpus-e3d" || isImportedRoot(project, selected)) && <button className="inspector-export" onClick={openSaveElement}>Spremi element u biblioteku</button>}
                   <details className="inspector-shortcuts"><summary>Kontrole i prečice</summary><p className="inspector-help"><strong>Osnovne kontrole prostorije</strong><span>Klik bira cijeli element</span><span>Ctrl/Shift + klik označava grupu elemenata</span><span>Strelice pomjeraju po X/Z</span><span>Page Up/Down pomjera po Y</span></p></details>
                 </>
               ) : (
@@ -2095,7 +2165,7 @@ export function App() {
               )}
             </div>
           </aside>
-          {rightTab === "room" && <div className="desktop-room-tab">            <RoomEditor room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} compact /></div>}
+          {rightTab === "room" && <div className="desktop-room-tab">            <RoomEditor wallColor={wallColor} onWallColor={changeWallColor} room={project.inspection.room} elements={project.inspection.elements} groupElements={selectedGroupElements} onInspectIssue={inspectLayoutIssue} onContainIssue={containLayoutIssue} onSeparateIssue={separateLayoutIssue} onUpdate={updateRoom} onDistribute={distributeRootElements} onUndo={undoWorkingCopy} canUndo={project.history.length > 0} compact /></div>}
           </div>
         </aside>
 
@@ -2105,6 +2175,8 @@ export function App() {
                 key={corpusRoomCameraSessions.key(project.originalInspection)}
                 cameraScope={project.originalInspection}
                 displayMode={roomDisplayMode}
+                wallColor={wallColor}
+                floorTextureUrl={floorTextureUrl}
                 showBoardEdges={showRoomBridges}
                 captureRef={captureRoomRef}
                 elements={project.inspection.elements}
@@ -2141,7 +2213,7 @@ export function App() {
 
       <footer className="statusbar">
         <span><i className={`status-dot ${project.dirty ? "status-dot-dirty" : ""}`} /> {project.dirty ? "Izmjene su samo u radnoj kopiji" : "Izvorni projekat otvoren samo za čitanje"}</span>
-        <span>{error ?? (materialLibrary ? `${materialLibrary.folderName}: ${materialLibrary.catalogCount} kataloga · ${materialLibrary.textureByUid.size} tekstura · ${materialLibrary.ambiguousUids} dvosmislenih UID-a · ${materialLibrary.missingPictures} bez slike` : null) ?? layoutIssues[0]?.message ?? (project.inspection.unknownTopLevelTags.length ? `${project.inspection.unknownTopLevelTags.length} nepoznatih sekcija` : "Struktura prepoznata")}</span>
+        <span>{libraryNotice ?? error ?? (materialLibrary ? `${materialLibrary.folderName}: ${materialLibrary.catalogCount} kataloga · ${materialLibrary.textureByUid.size} tekstura · ${materialLibrary.ambiguousUids} dvosmislenih UID-a · ${materialLibrary.missingPictures} bez slike` : null) ?? layoutIssues[0]?.message ?? (project.inspection.unknownTopLevelTags.length ? `${project.inspection.unknownTopLevelTags.length} nepoznatih sekcija` : "Struktura prepoznata")}</span>
       </footer>
     </div>
     </MaterialTexturesContext.Provider></MaterialLibraryContext.Provider></LocalCorpusContext.Provider>
@@ -2625,8 +2697,10 @@ function CutListView({ elements, groupElements, result, consumables, groupResult
 
 type RoomForm = { width: string; length: string; height: string; lowerHeight: string };
 
-function RoomEditor({ room, elements, groupElements, onInspectIssue, onContainIssue, onSeparateIssue, onUpdate, onDistribute, onUndo, canUndo, compact = false }: {
+function RoomEditor({ wallColor, onWallColor, room, elements, groupElements, onInspectIssue, onContainIssue, onSeparateIssue, onUpdate, onDistribute, onUndo, canUndo, compact = false }: {
   compact?: boolean;
+  wallColor: string;
+  onWallColor(value: string): void;
   room: CorpusS3dRoom;
   elements: readonly CorpusS3dElement[];
   groupElements: readonly CorpusS3dElement[];
@@ -2661,6 +2735,10 @@ function RoomEditor({ room, elements, groupElements, onInspectIssue, onContainIs
   return (
     <div className="detail-content room-editor-page">
       <div className="detail-title"><div><p className="eyebrow">Prostorija</p><h2>Raspored prostora</h2><span>Elementi i provjera rasporeda</span></div></div>
+      <section className="room-appearance">
+        <label><span>Boja zidova</span><input type="color" value={wallColor} onChange={(event) => onWallColor(event.target.value)} /></label>
+        <button className="secondary-button" disabled={wallColor === DEFAULT_WALL_COLOR} onClick={() => onWallColor(DEFAULT_WALL_COLOR)}>Bijela</button>
+      </section>
       <details className="room-settings" open={compact || undefined}>
         <summary>
           <span><strong>Dimenzije prostorije</strong><small>Otvori samo kada mijenjaš sobu</small></span>

@@ -312,3 +312,30 @@
 
 .desktop-sidebar.tab-elements .desktop-panel-content { grid-template-rows: repeat(2, minmax(0, 1fr)); }
 .desktop-sidebar.tab-elements .tree-scroll { min-height: 0; overflow-y: auto; }
+
+.room-appearance { display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:8px 10px;border:1px solid #c3d0da;background:#f5f8fa; }
+.room-appearance label { display:flex;align-items:center;gap:8px;font-size:12px;flex:1; }
+.room-appearance input[type="color"] { width:42px;height:26px;padding:0;border:1px solid #aabfce;background:#fff;cursor:pointer; }
+
+.save-element { display:grid;gap:10px;padding:14px;min-width:360px;font-size:13px; }
+.save-element label { display:grid;gap:4px; }
+.save-element input,.save-element select { padding:5px 7px;border:1px solid #aabfce;background:#fff; }
+.save-element-path { margin:0;padding:6px 8px;background:#f5f8fa;border:1px solid #c3d0da;font-family:Consolas,monospace;font-size:12px;word-break:break-all; }
+.save-element-error { margin:0;color:#a02525; }
+.save-element-actions { display:flex;flex-wrap:wrap;gap:8px; }
+
+.used-material { display:grid;gap:8px;padding:10px;min-width:560px;font-size:13px; }
+.used-material-tabs { display:flex;gap:4px; }
+.used-material-tabs button { padding:4px 14px;border:1px solid #aabfce;background:#eef3f7; }
+.used-material-tabs button[aria-selected="true"] { background:#fff;font-weight:600; }
+.used-material-toolbar,.used-material-actions { display:flex;gap:8px; }
+.used-material-scroll { max-height:52vh;overflow:auto;border:1px solid #c3d0da;background:#fff; }
+.used-material table { width:100%;border-collapse:collapse; }
+.used-material th,.used-material td { padding:3px 8px;text-align:left;border-bottom:1px solid #e3eaef; }
+.used-material th:last-child,.used-material td:last-child { text-align:right;white-space:nowrap; }
+.used-material-group th { background:#eaf0f4; }
+.used-material-section th { background:#dfe8ee; }
+.used-material td button { padding:0 6px;margin:0 2px;border:1px solid #aabfce;background:#f5f8fa;cursor:pointer; }
+.used-material-toggle { width:20px;border:1px solid #aabfce;background:#fff;cursor:pointer; }
+.used-material-total { margin:0; }
+.used-material-note { margin:0;color:#5b6b78;font-size:12px; }

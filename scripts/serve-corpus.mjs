@@ -4,6 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { handleSaveElementRequest } from "./library-save.mjs";
 
 const scriptFile = fileURLToPath(import.meta.url);
 const defaultRoot = path.resolve(path.dirname(scriptFile), "..");
@@ -13,6 +14,7 @@ export function createCorpusServer({ root = defaultRoot, host = "127.0.0.1", tok
   return http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", `http://${host}`);
+    if (await handleSaveElementRequest(request, response, root)) return;
     if (request.method !== "GET" && request.method !== "HEAD") return text(response, 405, "Method Not Allowed");
     if (url.pathname === "/__ivertim_corpus_health") {
       return json(response, 200, { app: "ivertim-corpus-local-v1", root, pid: process.pid, token }, request.method === "HEAD");

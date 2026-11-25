@@ -9,12 +9,15 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { corpusBoardOutline, parseCurvePoints, type CorpusS3dBoard, type CorpusS3dElement, type CorpusS3dRoom } from "../lib/corpus-s3d";
 import { corpusBoardDimensions, corpusHolePosition, corpusRoomTotalHeight, evaluateCorpusFormula, expandCorpusCurve } from "../lib/corpus-geometry";
 import { resolveCorpusMainFaceHoles } from "../lib/corpus-hole-geometry";
+import { corpusElementBoardBounds } from "../lib/corpus-board-bounds";
 import { corpusGroupBounds, corpusElementAllowsModeling } from "../lib/corpus-group";
 
-export type RoomDisplayMode = "drilling" | "lines" | "edge-check" | "decor";
+export type RoomDisplayMode = "drilling" | "lines" | "solid-lines" | "edge-check" | "decor";
 
 type Room3DViewProps = {
   displayMode: RoomDisplayMode;
+  wallColor: string;
+  floorTextureUrl: string | null;
   showBoardEdges: boolean;
   captureRef: { current: ((dataUrl: string) => void) | null };
   cameraScope: object;
@@ -36,7 +39,7 @@ type Room3DViewProps = {
 };
 
 
-export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScope, elements, room, selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData }: Room3DViewProps) {
+export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardEdges, captureRef, cameraScope, elements, room, selected, selectedBoardIndex, boardGroupSelection, groupElements, outsideRoomElements, overlappingElements, materialTextures, onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData }: Room3DViewProps) {
   const sceneActions = useRef({ onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData });
   useLayoutEffect(() => {
     sceneActions.current = { onSelect, onClearSelection, onToggleGroup, onMove, onMoveGroup, onOpenData };
@@ -160,10 +163,21 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
     const roomWidth = Math.max(1000, (room.width ?? 5) * 1000);
     const roomLength = Math.max(1000, (room.length ?? 5) * 1000);
     const roomHeight = Math.max(1000, (corpusRoomTotalHeight(room.height, room.lowerHeight) ?? 2.6) * 1000);
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(roomLength, roomWidth),
-      new THREE.MeshStandardMaterial({ color: 0xe9ece6, roughness: 1, metalness: 0 }),
-    );
+    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xe9ece6, roughness: 1, metalness: 0 });
+    let floorTexture: THREE.Texture | null = null;
+    if (floorTextureUrl) {
+      // Pod iz dekora (Podovi): pločica se ponavlja na svakih 1200 mm.
+      floorTexture = new THREE.TextureLoader().load(floorTextureUrl, (loaded) => {
+        loaded.colorSpace = THREE.SRGBColorSpace;
+        loaded.wrapS = loaded.wrapT = THREE.RepeatWrapping;
+        loaded.repeat.set(roomLength / 1200, roomWidth / 1200);
+        loaded.anisotropy = 8;
+        floorMaterial.color.set(0xffffff);
+        floorMaterial.map = loaded;
+        floorMaterial.needsUpdate = true;
+      });
+    }
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomLength, roomWidth), floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(-roomLength / 2, -4, -roomWidth / 2);
     floor.receiveShadow = true;
@@ -180,7 +194,7 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
     scene.add(orientationAxes);
     orientationAxesRef.current = orientationAxes;
 
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xf8faf6, roughness: 1, side: THREE.FrontSide });
+    const wallMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(wallColor), side: THREE.FrontSide }); // bez osvjetljenja: zid je uvijek tačno u izabranoj boji
     const backWall = new THREE.Mesh(new THREE.PlaneGeometry(roomLength, roomHeight), wallMaterial);
     backWall.rotation.y = Math.PI;
     backWall.position.set(-roomLength / 2, roomHeight / 2, 4);
@@ -265,10 +279,22 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
           transparent: true,
           opacity: issueColor !== null || isGrouped ? 1 : 0.18,
         });
-        envelope = new THREE.LineSegments(new THREE.EdgesGeometry(envelopeGeometry), envelopeMaterial);
-        envelope.position.copy(pickMesh.position);
-        envelope.visible = showEnvelopes || issueColor !== null;
-        group.add(envelope);
+        // Omotač korijenskog elementa prati stvarne daske (nominalna kutija može biti okrenuta ili iza zida).
+        const boardBounds = rootElements.has(element) ? corpusElementBoardBounds(element) : null;
+        if (boardBounds) {
+          envelope = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(boardBounds.maxX - boardBounds.minX, boardBounds.maxY - boardBounds.minY, boardBounds.maxZ - boardBounds.minZ)),
+            envelopeMaterial,
+          );
+          envelope.position.set((boardBounds.minX + boardBounds.maxX) / 2, (boardBounds.minY + boardBounds.maxY) / 2, -(boardBounds.minZ + boardBounds.maxZ) / 2);
+          envelope.visible = showEnvelopes || issueColor !== null;
+          parent.add(envelope);
+        } else {
+          envelope = new THREE.LineSegments(new THREE.EdgesGeometry(envelopeGeometry), envelopeMaterial);
+          envelope.position.copy(pickMesh.position);
+          envelope.visible = showEnvelopes || issueColor !== null;
+          group.add(envelope);
+        }
       }
 
       const materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }> = [];
@@ -277,7 +303,7 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
         const boardGrouped = isSelected && boardGroupSelectionRef.current.has(boardIndex);
         const boardMesh = createBoardMesh(board, element, elementIndex, boardIndex, boardSelected, boardGrouped, isGrouped, displayMode === "drilling" || ((displayMode === "decor" || displayMode === "edge-check") && showHoles), displayMode === "decor" ? textureForBoard(board) : null, displayMode);
         if (!boardMesh) continue;
-        boardMesh.edges.visible = showBoardEdges || displayMode === "lines" || displayMode === "drilling";
+        boardMesh.edges.visible = showBoardEdges || displayMode === "lines" || displayMode === "solid-lines" || displayMode === "drilling";
         group.add(boardMesh.mesh, boardMesh.edges, boardMesh.pickMesh);
         pickable.push(boardMesh.pickMesh);
         materials.push({ boardIndex, material: boardMesh.material, baseColor: boardMesh.baseColor });
@@ -591,11 +617,12 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
         }
       });
       sun.shadow.dispose();
+      floorTexture?.dispose();
       visualRefs.current.clear();
       if (groupEnvelopeRef.current === groupEnvelope) groupEnvelopeRef.current = null;
       if (orientationAxesRef.current === orientationAxes) orientationAxesRef.current = null;
     };
-  }, [cameraScope, elements, room, materialTextures, captureRef, displayMode, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
+  }, [cameraScope, elements, room, materialTextures, captureRef, displayMode, wallColor, floorTextureUrl, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
 
   useEffect(() => {
     const envelope = groupEnvelopeRef.current;
@@ -638,7 +665,7 @@ export function Room3DView({ displayMode, showBoardEdges, captureRef, cameraScop
               <button aria-pressed={showEnvelopes} onClick={() => setShowEnvelopes((value) => !value)}>Omotači</button>
               <button disabled={frontVisibility === "saved"} onClick={() => setFrontVisibility("saved")}>Vrati vidljivost fronti iz projekta</button>
               <button aria-pressed={showGrid} onClick={() => setShowGrid((value) => !value)}>Mreža</button>
-              <button disabled={displayMode === "lines" || displayMode === "drilling"} aria-pressed={displayMode === "drilling" || (displayMode !== "lines" && showHoles)} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
+              <button disabled={displayMode === "lines" || displayMode === "solid-lines" || displayMode === "drilling"} aria-pressed={displayMode === "drilling" || (displayMode !== "lines" && displayMode !== "solid-lines" && showHoles)} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
               <button aria-pressed={showProblems} disabled={!outsideRoomElements.length && !overlappingElements.length} onClick={() => setShowProblems((value) => !value)}>Problemi ({new Set([...outsideRoomElements, ...overlappingElements]).size})</button>
             </div>
           </details>
@@ -887,6 +914,8 @@ function createBoardMesh(
     depthWrite: board.transparent !== true,
     map: texture,
     visible: !wire,
+    // "Linije bez nevidljivih": plohe pišu samo dubinu, pa zaklanjaju linije iza sebe, a ne crtaju boju.
+    colorWrite: displayMode !== "solid-lines",
     vertexColors: displayMode === "edge-check" && !profileGeometry,
   });
   const mesh = new THREE.Mesh(geometry, material);

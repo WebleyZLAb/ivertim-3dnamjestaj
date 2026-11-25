@@ -1,5 +1,6 @@
 import { corpusRoomTotalHeight } from "./corpus-geometry.ts";
 import type { CorpusS3dElement, CorpusS3dRoom } from "./corpus-s3d.ts";
+import { corpusElementBoardBounds, type CorpusWorldBounds } from "./corpus-board-bounds.ts";
 import { corpusElementFootprint, corpusFootprintsOverlap, type CorpusElementFootprint } from "./corpus-footprint.ts";
 import { corpusElementAllowsModeling } from "./corpus-group.ts";
 import { corpusContainedRoomPosition } from "./corpus-placement.ts";
@@ -99,7 +100,7 @@ export function corpusSeparatedLayoutElements(
   return { elements: nextElements, movedIndex: movingIndex, delta };
 }
 
-type LayoutElement = { index: number; name: string; footprint: CorpusElementFootprint };
+type LayoutElement = { index: number; name: string; footprint: CorpusElementFootprint; boardBounds: CorpusWorldBounds | null };
 
 export function analyzeCorpusLayout(elements: readonly CorpusS3dElement[], room: CorpusS3dRoom): CorpusLayoutIssue[] {
   const bounds = elements.map((element, index) => elementBounds(element, index)).filter((value): value is LayoutElement => value !== null);
@@ -109,12 +110,14 @@ export function analyzeCorpusLayout(elements: readonly CorpusS3dElement[], room:
   const totalHeight = corpusRoomTotalHeight(room.height, room.lowerHeight);
   const roomHeight = totalHeight === null ? null : totalHeight * 1000;
 
+  const tolerance = 0.01;
   for (const item of bounds) {
-    const bounds = item.footprint.worldBounds;
-    const outside = bounds.minX < 0 || item.footprint.minY < 0 || bounds.minZ < 0
-      || (roomLength !== null && bounds.maxX > roomLength)
-      || (roomWidth !== null && bounds.maxZ > roomWidth)
-      || (roomHeight !== null && item.footprint.maxY > roomHeight);
+    // Stvarne daske imaju prednost: nominalna kutija elementa ne prati zarotirane daske i pod-elemente.
+    const box = item.boardBounds ?? { ...item.footprint.worldBounds, minY: item.footprint.minY, maxY: item.footprint.maxY };
+    const outside = box.minX < -tolerance || box.minY < -tolerance || box.minZ < -tolerance
+      || (roomLength !== null && box.maxX > roomLength + tolerance)
+      || (roomWidth !== null && box.maxZ > roomWidth + tolerance)
+      || (roomHeight !== null && box.maxY > roomHeight + tolerance);
     if (outside) issues.push({ type: "outside-room", message: `${item.name} izlazi izvan granica prostorije.`, elementIndexes: [item.index] });
   }
 
@@ -122,7 +125,8 @@ export function analyzeCorpusLayout(elements: readonly CorpusS3dElement[], room:
     for (let right = left + 1; right < bounds.length; right += 1) {
       const a = bounds[left]!;
       const b = bounds[right]!;
-      if (corpusFootprintsOverlap(a.footprint, b.footprint)) {
+      // Nominalne kutije mogu preklapanje prijaviti pogrešno (okrenute daske, pod-elementi); ako su daske poznate, i one se moraju preklapati.
+      if (corpusFootprintsOverlap(a.footprint, b.footprint) && boardBoundsOverlap(a.boardBounds, b.boardBounds)) {
         issues.push({ type: "overlap", message: `${a.name} i ${b.name} se prostorno preklapaju.`, elementIndexes: [a.index, b.index] });
       }
     }
@@ -133,7 +137,7 @@ export function analyzeCorpusLayout(elements: readonly CorpusS3dElement[], room:
 function elementBounds(element: CorpusS3dElement, index: number): LayoutElement | null {
   if (element.visible === false) return null;
   const footprint = corpusElementFootprint(element);
-  return footprint ? { index, name: element.name || element.code || `Element ${index + 1}`, footprint } : null;
+  return footprint ? { index, name: element.name || element.code || `Element ${index + 1}`, footprint, boardBounds: corpusElementBoardBounds(element) } : null;
 }
 
 function separationDistance(element: CorpusS3dElement, anchor: CorpusElementFootprint, axis: CorpusLayoutSeparationAxis, direction: 1 | -1, limit: number): number {
@@ -148,4 +152,12 @@ function separationDistance(element: CorpusS3dElement, anchor: CorpusElementFoot
     else high = middle;
   }
   return high * direction;
+}
+
+function boardBoundsOverlap(a: CorpusWorldBounds | null, b: CorpusWorldBounds | null): boolean {
+  if (!a || !b) return true;
+  const tolerance = 1e-7;
+  return a.minX < b.maxX - tolerance && a.maxX > b.minX + tolerance
+    && a.minY < b.maxY - tolerance && a.maxY > b.minY + tolerance
+    && a.minZ < b.maxZ - tolerance && a.maxZ > b.minZ + tolerance;
 }

@@ -123,7 +123,7 @@ export function DesktopHeader({ menus, children }: { menus: DesktopMenu[]; child
     <div className="desktop-toolbar" role="toolbar" aria-label="Glavna alatna traka">{children}</div>
   </header>;
 }
-type ToolbarIcon = "saveElement" | "print" | "duplicate" | "drilling" | "lines" | "kant" | "decor" | "bridges";
+type ToolbarIcon = "saveElement" | "print" | "duplicate" | "drilling" | "lines" | "solidLines" | "kant" | "decor" | "bridges";
 
 const toolbarIconPaths: Record<ToolbarIcon, string> = {
   saveElement: "M4 10h16v10H4z M8 10V4h8v6 M9 15h6",
@@ -131,6 +131,7 @@ const toolbarIconPaths: Record<ToolbarIcon, string> = {
   duplicate: "M8 8h12v12H8z M4 15V4h11",
   drilling: "M3 7l9-4 9 4v11l-9 4-9-4z M3 7l9 4 9-4 M12 11v11 M6 12h2 M16 12h2 M16 16h2",
   lines: "M3 7l9-4 9 4v11l-9 4-9-4z M3 7l9 4 9-4 M12 11v11",
+  solidLines: "M3 7l9-4 9 4v11l-9 4-9-4z M3 7l9 4 9-4 M12 11v11 M12 3v2",
   kant: "M3 8l9-5 9 5-9 5z M3 8v7l9 5 9-5V8 M12 13v7 M5 13l7 4 7-4",
   decor: "M3 4h18v16H3z M7 4c6 5-6 8 0 16 M12 4c6 5-6 8 0 16 M17 4c6 5-6 8 0 16",
   bridges: "M3 4h18v16H3z M3 11h18 M10 4v7 M15 11v9",
