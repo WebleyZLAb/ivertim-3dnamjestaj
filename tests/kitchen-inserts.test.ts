@@ -114,3 +114,34 @@ test("postojeća cokla i ploha se prepoznaju i preskaču, ostalo se dodaje", () 
   assert.deepEqual([worktops.kept.map((insert) => insert.spec.width), worktops.skipped], [[407], 1]);
   assert.deepEqual(withoutExisting(plinthInserts(runs), []).skipped, 0);
 });
+
+import { ceilingPlateInserts, isWallCabinet } from "../lib/kitchen-inserts.ts";
+
+/** Uzorak Puzic/stan (Corpus): 4 elementa D1V 800 × 300 × 300, y 200, ugao 270, z 2770…5170; Stropna_ploha (2915, 500, 2770), 3200 × 325 × 18. */
+const lowRow = `<PROJECTFILE VER="17">${[2770, 3570, 4370, 5170].map((z) => `<ELEMENT ECLAS="TElement" ENAME="D1V" EXPOX="2940" EYPOS="200" EZPOS="${z}" ESIRINA="800" EVISINA="300" EDUBINA="300" EKUT="270"><DASKE><AD DNAME="Bok" VISINA="300" DUBINA="300" DEBLJINA="18" MATNAME="Bijela" MATUID="W1"/></DASKE></ELEMENT>`).join("")}</PROJECTFILE>`;
+
+test("stropna ploha: Puzic/stan, 4 elementa pod 270° → ploha 3200 × 325 na (2915, 500, 2770)", () => {
+  const runs = findBaseRuns(parseCorpusS3d(lowRow).elements, 5, () => true);
+  assert.deepEqual(runs.map((run) => [run.angle, run.a, run.width, run.front, run.top, run.depth]), [[270, 2770, 3200, 2940, 500, 300]]);
+  const [plate] = ceilingPlateInserts(runs);
+  assert.deepEqual([plate!.spec.name, plate!.spec.width, plate!.spec.depth, plate!.spec.thickness, plate!.position, plate!.angle], ["Stropna_ploha", 3200, 325, 18, [2915, 500, 2770], 270]);
+  const bounds = corpusElementBoardBounds(parseCorpusE3d(kitchenInsertSource(plate!)).elements[0]!)!;
+  // Corpusova ploha: X 2915–3240, Y 500–518, Z 2770–5970.
+  assert.deepEqual([bounds.minX, bounds.maxX, Math.round(bounds.minY), Math.round(bounds.maxY), bounds.minZ + 0, bounds.maxZ].map((value) => Math.round(value) + 0), [2915, 3240, 500, 518, 2770, 5970]);
+});
+
+test("stropna ploha: Baros stan/kup el, element 800 × 480 → ploha 800 × 530 na Z 530 uz prepust 50", () => {
+  const xml = `<PROJECTFILE VER="17"><ELEMENT ECLAS="TElement" ENAME="Podni" EXPOX="1500" EYPOS="200" EZPOS="480" ESIRINA="800" EVISINA="570" EDUBINA="480" EKUT="0"><DASKE><AD DNAME="Bok" VISINA="570" DUBINA="480" DEBLJINA="18" MATNAME="Bijela" MATUID="W1"/></DASKE></ELEMENT></PROJECTFILE>`;
+  const [plate] = ceilingPlateInserts(findBaseRuns(parseCorpusS3d(xml).elements, 5, () => true), { thickness: 12, overhang: 50 });
+  assert.deepEqual([plate!.spec.width, plate!.spec.depth, plate!.position], [800, 530, [1500, 770, 530]]);
+  const bounds = corpusElementBoardBounds(parseCorpusE3d(kitchenInsertSource(plate!)).elements[0]!)!;
+  assert.deepEqual([bounds.minX, bounds.maxX, Math.round(bounds.minY), Math.round(bounds.maxY), bounds.minZ + 0, bounds.maxZ].map((value) => Math.round(value) + 0), [1500, 2300, 770, 782, 0, 530]);
+});
+
+test("viseći element: iznad poda, visine 200–1500, nije stropna ploha ni donji", () => {
+  const upper = parseCorpusS3d(`<PROJECTFILE VER="17">
+    <ELEMENT ECLAS="TElement" ENAME="G2V" EXPOX="0" EYPOS="1500" EZPOS="350" ESIRINA="600" EVISINA="720" EDUBINA="350" EKUT="0"/>
+    <ELEMENT ECLAS="TElement" ENAME="D1V" EXPOX="0" EYPOS="0" EZPOS="560" ESIRINA="600" EVISINA="820" EDUBINA="510" EKUT="0"/>
+    <ELEMENT ECLAS="TElement" ENAME="Stropna_ploha" EXPOX="0" EYPOS="2220" EZPOS="375" ESIRINA="600" EVISINA="18" EDUBINA="375" EKUT="0"/></PROJECTFILE>`).elements;
+  assert.deepEqual(upper.map(isWallCabinet), [true, false, false]);
+});

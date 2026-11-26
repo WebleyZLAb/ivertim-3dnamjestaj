@@ -46,3 +46,14 @@ Uglovi: podržani su 0°, 90°, 180° i 270° preko lokalnog koordinatnog sistem
 Postojeće cokle i ploče (isti naziv, ugao i Y, preklapanje bar pola širine) se prepoznaju i preskaču uz poruku.
 
 Ograničenja: elementi pod uglovima koji nisu pravi se preskaču; nizovi pod suprotnim uglovima na istom zidu (npr. 90° i 270°) se ne spajaju (Corpusova ploha na desnom zidu Tijane spaja ih u jednu od 2000 mm); nema spojeva na uglovima; prepust i dubina su fiksni (37/600); `RPTIP` se ne postavlja. Zidna lajsna, Stropna i Podna ploha nisu urađene.
+
+## Urađeno 26.11.2026 (dopuna): Umetanje → Stropna ploha, izvor pravih projekata
+
+Nađeno je **40+ pravih S3D projekata** u `C:\CorpusSoftware64\CorpusSolutions\sobasav` (Mark Nišić, Puzić stan, Vignjević, GOGA ELNOS, Baros stan …); oni odgovaraju CSV-ovima iz `Desktop\IVERTIM - Laptop\CORPUS CSV Export`. Pregled svih: nema elemenata Podna ploha ni Zidna lajsna (samo `Radna_Ploha` u 15 projekata, `Stropna_ploha` u 2, `Podni` u 6 su donji elementi, `zidna obloga` u 2), a nijedan nema CAD oblik osim obrisa sobe u toku `PLANES`.
+
+**Stropna ploha** (`ceilingPlateInserts` u `lib/kitchen-inserts.ts`, meni *Umetanje → Stropna ploha*; rade na označenim elementima ako je označeno bar dva, inače na svim visećim) izvedena je iz dva stvarna uzorka i provjerena na brojevima iz njih:
+- **Puzic/stan:** 4 elementa D1V 800 × 300 pod 270° (y 200, z 2770…5170) → ploha 3200 × 325 × 18 na (2915, 500, 2770), daske X 2915–3240, Y 500–518, Z 2770–5970.
+- **Baros stan/kup el:** element 800 × 480 (y 200, h 570) → ploha 800 × 530 na Z 530, Y 770 (prepust 50, debljina 12).
+- Pravilo: X početka niza i širina niza, Y = vrh elemenata (y + visina), prepust samo sprijeda (zadano 25 mm), straga ravno s elementima (dubina = dubina elemenata + prepust), debljina 18, ugao kao elementi.
+
+Još nedostaje: **Podna ploha** i **Zidna lajsna** (nema uzoraka ni u jednom od 40 projekata), spajanje nizova pod suprotnim uglovima.

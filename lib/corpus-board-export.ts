@@ -72,7 +72,7 @@ export function corpusAscii(value: string): string {
   return value.replace(/[čćšžđČĆŠŽĐ]/g, (char) => DIACRITICS[char] ?? char);
 }
 
-export function corpusBoardExportRows(elements: readonly CorpusS3dElement[], lookups: BoardExportLookups = {}): string[][] {
+export function corpusBoardExportRows(elements: readonly CorpusS3dElement[], lookups: BoardExportLookups = {}, options: { /** Zbroji iste ploče u jedan red s većom količinom (zadano da). */ merge?: boolean } = {}): string[][] {
   const label = lookups.label ?? ((uid: string, name: string) => name || uid);
   const rows: string[][] = [];
   const mergeKeys: (string | null)[] = [];
@@ -97,7 +97,10 @@ export function corpusBoardExportRows(elements: readonly CorpusS3dElement[], loo
         const edges = board.consumables.filter((item) => item.type === "0");
         const side = (sideIndex: number) => {
           const edge = edges.find((item) => item.sides[sideIndex]);
-          return edge ? (lookups.edgeCode?.(edge.materialUid, edge.name, board.thickness ?? undefined) || label(edge.materialUid, edge.materialName)) : "";
+          if (!edge) return "";
+          const code = lookups.edgeCode?.(edge.materialUid, edge.name, board.thickness ?? undefined);
+          // Kao u Corpusu: traka koje nema u katalogu piše se "????".
+          return code === undefined ? label(edge.materialUid, edge.materialName) : code || "????";
         };
         const material = lookups.details?.(board.materialUid, board.materialName);
         const row = [
@@ -106,7 +109,7 @@ export function corpusBoardExportRows(elements: readonly CorpusS3dElement[], loo
           board.name || "Ploča", expandCorpusCode(board.code || "%NE%", { name: board.name || "Ploča", topName: ownTop.name, topCode: ownTop.code, materialCode: material?.code || label(board.materialUid, board.materialName) }), "", board.program ?? "", board.program1 ?? "", board.note ?? "",
         ].map(corpusAscii);
         // Police istih mjera, materijala i traka u istom elementu: jedan red s većom količinom.
-        const mergeKey = !board.program && (hasPrograms || board.boardType === 2) ? JSON.stringify([instance, row[0], row[1], row.slice(2, 6), row[8], board.thickness]) : null;
+        const mergeKey = options.merge !== false && !board.program && (hasPrograms || board.boardType === 2) ? JSON.stringify([instance, row[0], row[1], row.slice(2, 6), row[8], board.thickness]) : null;
         const existing = mergeKey === null ? -1 : mergeKeys.indexOf(mergeKey);
         if (existing >= 0) rows[existing]![7] = (Number(rows[existing]![7]) + 1).toFixed(2);
         else { rows.push(row); mergeKeys.push(mergeKey); }

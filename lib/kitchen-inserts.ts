@@ -14,6 +14,10 @@ import { writeCorpusE3dGeometryCopy } from "./corpus-s3d-writer.ts";
  *   dubina 600, debljina 38 (ugao isti kao elemenata).
  * - Cokla: po nizu elemenata kojima noge nisu vidljive (`VIDLJIVOST_NOGICA=0`), visine `VISINA_NOGICA − 5`,
  *   debljine 18, daska iza prednje ivice (b = prednji b + debljina).
+ * - Stropna ploha (uzorci: Baros stan/kup el i Puzic/stan): ploča na vrhu izabranog niza elemenata; a početka niza, širina
+ *   niza, Y = vrh elemenata (y + visina), prepust (25 mm) samo sprijeda, straga je ravna s elementima, pa je dubina
+ *   dubina elemenata + prepust; debljina 18. Uzorci: 4 elementa 800 × 300 pod 270° → ploha 3200 × 325 na (2915, 500, 2770);
+ *   element 800 × 480 → ploha 800 × 530 na Z 530 (prepust 50).
  * Podržani su uglovi 0°, 90°, 180° i 270°; elementi pod drugim uglovima se preskaču. Nizovi pod suprotnim uglovima
  * na istom zidu se ne spajaju, nema spojeva na uglovima, a `RPTIP` se ne postavlja. Postojeća cokla ili ploha (isti
  * naziv, ugao i Y, preklapanje bar pola širine) se prepoznaje i umetak se preskače.
@@ -27,6 +31,7 @@ export type BaseRun = {
   width: number;
   /** Prednji b (najmanji P·v elemenata niza). */
   front: number;
+  /** Y vrha elemenata niza (y + visina). */
   top: number;
   depth: number;
   elements: CorpusS3dElement[];
@@ -62,9 +67,18 @@ export function isBaseCabinet(element: CorpusS3dElement): boolean {
   return Math.abs(y) < 1 && height >= 600 && height <= 1000 && depth > 0 && depth <= 700 && width > 0 && element.variables["RPTIP"] === undefined;
 }
 
+/** Je li element viseći (gornji): ne na podu, pod pravim uglom, razumne visine i dubine. */
+export function isWallCabinet(element: CorpusS3dElement): boolean {
+  if (element.visible === false || SPECIAL_NAME.test(element.name.trim()) || /^stropna[_ ]?ploha$/i.test(element.name.trim())) return false;
+  const [x, y, z] = element.position.map(num);
+  const [width, height, depth] = [num(element.width), num(element.height), num(element.depth)];
+  if (x === null || y === null || z === null || width === null || height === null || depth === null || rightAngle(num(element.angle)) === null) return false;
+  return y >= 900 && height >= 200 && height <= 1500 && depth > 0 && depth <= 650 && width > 0 && element.variables["RPTIP"] === undefined;
+}
+
 /** Nizovi susjednih donjih elemenata istog ugla i istog b (razmak do 5 mm), poredani duž zida. */
-export function findBaseRuns(elements: readonly CorpusS3dElement[], tolerance = 5): BaseRun[] {
-  const items = elements.filter(isBaseCabinet).map((element) => {
+export function findBaseRuns(elements: readonly CorpusS3dElement[], tolerance = 5, accept: (element: CorpusS3dElement) => boolean = isBaseCabinet): BaseRun[] {
+  const items = elements.filter(accept).map((element) => {
     const angle = rightAngle(num(element.angle))!;
     return { element, angle, ...coordinates(element.position[0]!, element.position[2]!, angle) };
   }).sort((p, q) => p.angle - q.angle || p.b - q.b);
@@ -82,11 +96,11 @@ export function findBaseRuns(elements: readonly CorpusS3dElement[], tolerance = 
       if (run && item.a <= run.a + run.width + tolerance) {
         run.width = Math.max(run.a + run.width, item.a + item.element.width!) - run.a;
         run.front = Math.min(run.front, item.b);
-        run.top = Math.max(run.top, item.element.height!);
+        run.top = Math.max(run.top, item.element.position[1]! + item.element.height!);
         run.depth = Math.max(run.depth, item.element.depth!);
         run.elements.push(item.element);
       } else {
-        run = { angle: item.angle, a: item.a, width: item.element.width!, front: item.b, top: item.element.height!, depth: item.element.depth!, elements: [item.element] };
+        run = { angle: item.angle, a: item.a, width: item.element.width!, front: item.b, top: item.element.position[1]! + item.element.height!, depth: item.element.depth!, elements: [item.element] };
         runs.push(run);
       }
     }
@@ -110,6 +124,21 @@ export function worktopInserts(runs: readonly BaseRun[], options: WorktopOptions
     const material = firstBoardMaterial(run.elements);
     return {
       spec: { name: "Radna_Ploha", code: "", className: "TElement", width: Math.round(run.width * 1000) / 1000, height: thickness, depth, starterDirection: 2, starterBoardName: "Radna ploha", thickness, materialName: material.name, materialUid: material.uid, color: material.color },
+      position: at(run, run.a, run.top, run.front - overhang),
+      angle: run.angle,
+    };
+  });
+}
+
+export type CeilingPlateOptions = { thickness?: number; overhang?: number };
+
+/** Stropna ploha: po jedna na vrhu svakog niza elemenata; dubina = dubina elemenata + prepust sprijeda. */
+export function ceilingPlateInserts(runs: readonly BaseRun[], options: CeilingPlateOptions = {}): KitchenInsert[] {
+  const thickness = options.thickness ?? 18, overhang = options.overhang ?? 25;
+  return runs.map((run) => {
+    const material = firstBoardMaterial(run.elements);
+    return {
+      spec: { name: "Stropna_ploha", code: "", className: "TElement", width: Math.round(run.width * 1000) / 1000, height: thickness, depth: Math.round((run.depth + overhang) * 1000) / 1000, starterDirection: 2, starterBoardName: "Stropna_ploha", thickness, materialName: material.name, materialUid: material.uid, color: material.color },
       position: at(run, run.a, run.top, run.front - overhang),
       angle: run.angle,
     };

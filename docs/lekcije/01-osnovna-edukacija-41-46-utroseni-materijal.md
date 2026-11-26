@@ -95,3 +95,14 @@ Pravila potvrđena ovim poređenjem (i ugrađena u `lib/corpus-board-export.ts`)
 - **Tekst je ASCII:** č, ć, š, ž → c, c, s, z (đ → d je pretpostavka); CSV nema BOM.
 
 Ostaje nesrazmjer: ~5–10 % redova se ne poklapa jer su CSV-ovi iz starijih stanja projekata, nekoliko količina (spajanje u neizvoženim elementima) i dekor trake po katalogu računara.
+
+### Dopuna: automatsko uparivanje svih S3D-ova i CSV-ova (26.11.2026.)
+
+Svih ~40 S3D projekata iz `sobasav`, `Downloads` i `Desktop` upareno je sa CSV-ovima po dimenzijama ploča; 12 parova sa sličnošću 72–100 %, **1214 poklopljenih redova**. Slaganje po kolonama: dimenzije 100 %, naziv elementa 100 %, naziv daske 100 %, šifra daske 99,8 %, šifra elementa 98,6 %, vlakna 98,2 %, količina 94,7 %, šifra materijala 87,6 %. Trake (73–86 %) se ne poklapaju samo zbog **naziva kataloga** (stariji katalog je pisao `1MM_5981`, sadašnji `1_5981`); logika traka je ista. Količine se razlikuju gdje je S3D noviji od CSV-a (u S3D-u već ima brojeva programa koje CSV nema, pa Corpus u CSV-u spaja iste ploče). Traka koje nema u katalogu piše se `????` kao u Corpusu.
+
+## Zbrajanje istih ploča (opcija)
+
+Izvoz po pločama i krojna lista po zadanom zbrajaju identične ploče u jedan red s većom količinom. To ne valja kad se ploče razlikuju po bušenju (npr. šarke na lijevim i desnim vratima). Zato postoji opcija "ne zbrajaj":
+
+- Export → "CSV po pločama, ne zbrajaj iste…" (`corpusBoardExportRows(..., { merge: false })`), svaka ploča je red s količinom 1.00.
+- Krojna lista → kvačica "Ne zbrajaj iste ploče" (`buildCorpusCutList(..., { separate: true })`).

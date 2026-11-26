@@ -50,7 +50,7 @@ function isCorpusCutListBoard(board: CorpusS3dBoard): board is CorpusCutListBoar
   return corpusCutListSkipReason(board) === null;
 }
 
-export function buildCorpusCutList(elements: readonly CorpusS3dElement[], options: { includeHidden?: boolean } = {}): CorpusCutListResult {
+export function buildCorpusCutList(elements: readonly CorpusS3dElement[], options: { includeHidden?: boolean; /** Ne zbrajaj iste ploče: jedan red po ploči (npr. bušenje šarki se razlikuje na lijevim i desnim vratima). */ separate?: boolean } = {}): CorpusCutListResult {
   const groups = new Map<string, Omit<CorpusCutListItem, "parts"> & { parts: Set<string> }>();
   const skippedReasons: Record<string, number> = {};
   let skippedBoards = 0;
@@ -76,7 +76,7 @@ export function buildCorpusCutList(elements: readonly CorpusS3dElement[], option
         }
         const materialName = board.materialName || "Materijal nije naveden";
         const materialUid = board.materialUid || "";
-        const key = JSON.stringify([materialUid, materialName, board.frontType, board.height, board.width, board.thickness]);
+        const key = JSON.stringify([materialUid, materialName, board.frontType, board.height, board.width, board.thickness, options.separate ? totalBoards : null]);
         const existing = groups.get(key) ?? {
           materialName, materialUid, frontType: board.frontType, height: board.height, width: board.width, thickness: board.thickness,
           quantity: 0, holeCount: 0, hiddenCount: 0, parts: new Set<string>(),

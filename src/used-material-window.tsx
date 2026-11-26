@@ -6,7 +6,7 @@ type Props = {
   byElement: readonly UsedElement[];
   onOpenCutList(): void;
   onPrint(): void;
-  onExport(): void;
+  onExport(merge: boolean): void;
 };
 
 const m2 = (value: number) => value.toFixed(3);
@@ -25,6 +25,8 @@ function loadMargins(): UsedMaterialMargins {
 export function UsedMaterialWindow({ used, byElement, onOpenCutList, onPrint, onExport }: Props) {
   const [tab, setTab] = useState<"boards" | "elements">("boards");
   const [margins, setMargins] = useState<UsedMaterialMargins>(loadMargins);
+  // Zbrajanje istih ploča u izvozu; isključi kad se ploče razlikuju po bušenju (npr. lijeva i desna vrata).
+  const [mergeBoards, setMergeBoards] = useState(true);
   // Sirovi tekst polja marže dok se piše (da se može upisati "12." i "12,5"); po izlasku iz polja prikazuje se broj.
   const [marginText, setMarginText] = useState<Record<string, string>>({});
   const changeMargins = (next: UsedMaterialMargins) => {
@@ -88,7 +90,7 @@ export function UsedMaterialWindow({ used, byElement, onOpenCutList, onPrint, on
       <p className="used-material-total">{quantities.size > 0 && <em>Zbir uključuje ručne izmjene ploča; trake i okovi nisu preračunati. </em>}{used.unpricedGroups > 0 && <span>{used.unpricedGroups} grupa ploča bez cijene u katalogu. </span>}{total(totalArea)} m² ploča · {total(edgeTotal)} m traka · {used.fittings.reduce((sum, item) => sum + item.quantity, 0)} kom okova</p>
       <p className="used-material-note">Zbir računa samo stavke kojima je u katalogu zadana cijena (kao Corpus), bez marže. Količine (− / +) i brisanje redova mijenjaju samo ovaj prikaz, ne projekat. Dužina traka je zbir strana plus 80 mm po strani, kao u Corpusu.</p>
     </>}
-    <div className="used-material-actions"><button onClick={onPrint}>Ispiši…</button><button onClick={onExport}>Export (CSV po pločama)</button><button onClick={onOpenCutList}>Krojna lista</button></div>
+    <div className="used-material-actions"><button onClick={onPrint}>Ispiši…</button><label className="check-field"><input type="checkbox" checked={mergeBoards} onChange={(event) => setMergeBoards(event.target.checked)} />Zbroji iste ploče</label><button onClick={() => onExport(mergeBoards)}>Export (CSV po pločama)</button><button onClick={onOpenCutList}>Krojna lista</button></div>
   </div>;
 }
 

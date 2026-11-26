@@ -80,3 +80,13 @@ test("u izvoženom elementu (ima brojeve programa) spajaju se sve ploče bez pro
   const rows = corpusBoardExportRows(parseCorpusS3d(exported).elements);
   assert.deepEqual(rows.map((row) => [row[12], row[7], row[15]]), [["Lijevi_bok", "1.00", "100000003"], ["Desni_Bok", "1.00", "100000004"], ["Pregrada1", "2.00", ""]]);
 });
+
+test("traka koje nema u katalogu piše se ????, kao u Corpusu", () => {
+  const rows = corpusBoardExportRows(parseCorpusS3d(xml).elements, { edgeCode: () => "" });
+  assert.equal(rows.find((row) => row[12] === "Bok")![2], "????");
+});
+
+test("merge: false ostavlja iste police zasebno (svaka količina 1.00)", () => {
+  const rows = corpusBoardExportRows(parseCorpusS3d(shelves).elements, {}, { merge: false });
+  assert.deepEqual(rows.filter((row) => row[12].startsWith("Polica")).map((row) => [row[12], row[7]]), [["Polica", "1.00"], ["Polica1", "1.00"]]);
+});
