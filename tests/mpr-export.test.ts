@@ -37,3 +37,24 @@ test("MPR: dijakritici u imenu ploče se zamjenjuju ASCII-jem kao u CSV izvozu",
   assert.match(mpr, /PartName: Ploca_sank/);
   assert.match(mpr, /Material: Hrast cilim/);
 });
+
+test("utori: rupe s RAS MODE=4 postaju <112 Tasche kao u Corpusovom programu (uzorak Ledja 1850 × 330)", async () => {
+  const { corpusBoardGroovesMpr } = await import("../lib/mpr-export.ts");
+  const hole = (x: string, y: string, vis: string, ang: string) => ({ groupType: "GRUPA14", name: "Grupa", xExpression: x, yExpression: y, diameter: 10, depth: 6, plane: 1, angle: 0, machiningMode: 4, machining: { CONMIL: "0", MILTOOL: "100", VIS: vis, SIR: "17", ANG: ang, CRAD: "0", DKOR: "0", XYOV: "80", FEED: "5", THRO: "false" } });
+  const lines = corpusBoardGroovesMpr({ height: 1850, width: 330, holes: [hole("920", "8.5+10", "1840", "90"), hole("1840-8.5", "170", "320", "0"), { ...hole("1", "1", "1", "0"), machiningMode: 1 }] });
+  const block = (xa: string, ya: string, wi: string, br: string) => ['<112 \\Tasche\\', 'T_="T6"', `XA="${xa}"`, `YA="${ya}"`, `WI="${wi}"`, 'LA="17"', `BR="${br}"`, 'KO="00"', 'XY="80"', 'RD="0"', 'TI="6"', 'F_="5"'];
+  assert.deepEqual(lines, [...block("920", "18.5", "-90", "1840"), ...block("1831.5", "170", "0", "320")]);
+});
+
+test("MPR samo s utorima (bez usjecanja) i bez ičega: prvi se piše, drugi se odbija", () => {
+  const groove = { groupType: "GRUPA14", name: "G", xExpression: "10", yExpression: "20", diameter: 10, depth: 6, plane: 1, angle: 0, machiningMode: 4, machining: { VIS: "100", SIR: "17", ANG: "0", XYOV: "80", FEED: "5", CRAD: "0" } };
+  const base = { curveData: outline, height: 1000, width: 600, thickness: 18 };
+  assert.match(corpusBoardCutoutMpr({ ...base, holes: [groove] } as never, { partName: "Ledja", materialName: "U115" }), /<112 \\Tasche\\/);
+  assert.throws(() => corpusBoardCutoutMpr({ ...base, holes: [] } as never, { partName: "Ledja", materialName: "U115" }));
+});
+
+test("MPR s bušenjima vrata: blokovi <102 kao u Corpusovom programu (uzorak Fronta_ 286 × 256)", () => {
+  const mpr = corpusBoardCutoutMpr({ curveData: outline, height: 286, width: 256, thickness: 18 }, { partName: "Fronta_", materialName: "_0", bores: [{ x: 50, y: 234.5, diameter: 35, depth: 14 }, { x: 24, y: 229, diameter: 3, depth: 3 }] });
+  const block = (xa: string, ya: string, ti: string, du: string) => ['<102 \\Veritkalno\\', `XA="${xa}"`, `YA="${ya}"`, `TI="${ti}"`, `DU="${du}"`, 'AN="1"', 'MI="0"', 'AB="32"', 'WI="0"', 'BM="LS"', 'HP="0"', 'SP="0"', 'MX="0"', 'MY="0"', 'MZ="0"', 'KO="00"'].join("\r\n");
+  assert.ok(mpr.includes(`${block("50", "234.5", "14", "35")}\r\n${block("24", "229", "3", "3")}\r\n!`));
+});

@@ -87,7 +87,7 @@ Izvor: `Desktop\IVERTIM - Laptop\CORPUS CSV Export\` (~60 pravih izvoza iz Corpu
 
 Pravila potvrđena ovim poređenjem (i ugrađena u `lib/corpus-board-export.ts`):
 - **Trake:** Duž L = `STR2`, Duž D = `STR3`, Šir Do = `STR0`, Šir Go = `STR1` (potvrđeno na stotinama redova). Raniji nalaz o dužini trake (STR0/STR1 duž širine, STR2/STR3 duž visine) se slaže s ovim.
-- **Širina trake:** 22 mm za ploče 18 mm (`1_K003`), 42 mm za radnu plohu 38 mm (`1S_K003`); bira se najuža traka koja pokriva debljinu ploče + 2 mm. Dekor trake iz kataloga može se razlikovati između računara (laptop: `1_ORAH`, ovdje `1_0729`).
+- **Širina trake:** 22 mm za ploče 18 mm (`1_K003`), 42 mm za radnu ploču 38 mm (`1S_K003`); bira se najuža traka koja pokriva debljinu ploče + 2 mm. Dekor trake iz kataloga može se razlikovati između računara (laptop: `1_ORAH`, ovdje `1_0729`).
 - **Naziv Mat** je `FULLNAME` iz kataloga, prazan kad ga katalog nema.
 - **Naziv Ele / Šifra Eler:** element koji neposredno sadrži dasku (npr. `Fronta`) i razvijen `ESIFRA` tog elementa. **Šifra Daske** je razvijen `DSIFRA` daske. Makroi: `%NE%` vlastiti naziv, `%TPNE%` naziv korijenskog elementa, `%TPSE%` razvijena šifra korijenskog elementa, `%KMC%` i `%KMPO%` = "0" (npr. `Radna_Ploha00`, `Radna_Ploha100Radna_Ploha00`). `%ND%` je naziv daske (npr. „PLAFON“), a `%SM%` šifra materijala (cokla u materijalu 7045 → „7045“); potvrđeno na Kuhinji_2 i Tijani.
 - **Program** (kolona 16) je atribut `PROGRAM` daske (broj tipa 100000028 koji Corpus dodijeli pri izvozu i spremi u S3D); u koloni 15 (naziv programa) je uvijek prazno.

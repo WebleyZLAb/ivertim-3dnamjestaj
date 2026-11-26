@@ -3,6 +3,7 @@ import { GolaCutsDialog } from "./gola-cuts-dialog";
 import { CutoutPanel } from "./cutout-panel";
 import { corpusBoardCutouts } from "../lib/corpus-cutouts";
 import { corpusBoardCutoutMpr } from "../lib/mpr-export";
+import { corpusElementHettichBores } from "../lib/corpus-hettich-door";
 import { LibraryFolderTree, LibraryElementCard } from "./library-browser-parts";
 import { libraryDisplayPath, libraryFolders, libraryChildren, libraryMatches, libraryItemKind, type LibraryKind } from "../lib/corpus-library-browser";
 import { decodeCorpusTextDocument } from "../lib/corpus-text";
@@ -733,10 +734,10 @@ export function App() {
     ] },
     { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("ceiling") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
+    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploča", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("ceiling") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
     { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Izvještaji (Ispiši)…", disabled: !project, onClick: () => { activateWindow("reports"); setReportOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
-    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: () => exportBoardCsv(true) }, { label: "CSV po pločama, ne zbrajaj iste…", disabled: !project, onClick: () => exportBoardCsv(false) }, { label: "MPR usjecanja radne ploče…", disabled: !selected, onClick: exportCutoutMpr }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
+    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: () => exportBoardCsv(true) }, { label: "CSV po pločama, ne zbrajaj iste…", disabled: !project, onClick: () => exportBoardCsv(false) }, { label: "MPR usjecanja, utori i šarke…", disabled: !selected, onClick: exportCutoutMpr }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
   ];
@@ -968,7 +969,7 @@ export function App() {
   /** Usjecanja ploče (glodanje) mijenjaju E3D izvor elementa kao i izrazi ploče; poništavanje i spremanje rade isto. */
   function editSelectedBoardCutouts(boardIndex: number, edit: (xml: string, elementPath: readonly number[]) => string): string | void {
     const target = structuredE3dTarget(boardIndex, true);
-    if (!target || !selected) return "Usjecanje je dostupno za element dodat iz biblioteke ili umetnut (npr. Radna ploha).";
+    if (!target || !selected) return "Usjecanje je dostupno za element dodat iz biblioteke ili umetnut (npr. Radna ploča).";
     try {
       const root = project!.inspection.elements[target.rootIndex]!;
       const xml = writeCorpusE3dGeometryCopy(target.source.sourceXml, [target.source.originalElement], [root]);
@@ -1861,14 +1862,16 @@ export function App() {
   }
 
   /** Izvoz po pločama (profil Ivertim, kao Corpusov corpus.CSV): jedan red po ploči, bez zaglavlja. */
-  /** MPR programi (glodanje usjecanja) za ploče izabranog elementa koje imaju usjecanja; jedan fajl po ploči. */
+  /** MPR programi (usjecanja, utori i bušenje šarki vrata) za ploče izabranog elementa; jedan fajl po ploči. */
   function exportCutoutMpr() {
     if (!selected) return;
-    const boards = selected.boards.filter((board) => corpusBoardCutouts(board).length > 0);
-    if (!boards.length) { setError("Izabrani element nema ploča s usjecanjem."); return; }
+    const boardIndexes = selected.boards.flatMap((board, index) => corpusBoardCutouts(board).length > 0 || board.holes.some((hole) => hole.machiningMode === 4) || corpusElementHettichBores(selected, index) ? [index] : []);
+    const boards = boardIndexes.map((index) => selected.boards[index]!);
+    if (!boards.length) { setError("Izabrani element nema ploča s usjecanjem, utorom ili šarkama."); return; }
     try {
       boards.forEach((board, index) => {
-        const text = corpusBoardCutoutMpr(board, { partName: board.name || selected.name, materialName: board.materialName || board.materialUid });
+        const bores = corpusElementHettichBores(selected, boardIndexes[index]!) ?? undefined;
+        const text = corpusBoardCutoutMpr(board, { partName: board.name || selected.name, materialName: materialDetails(board.materialUid, board.materialName)?.code || board.materialName || board.materialUid, bores });
         downloadText(`${(board.name || selected.name).replace(/[^\w.-]+/g, "_")}${boards.length > 1 ? `-${index + 1}` : ""}.mpr`, text, "text/plain;charset=windows-1250");
       });
       setError(null);
@@ -1905,14 +1908,14 @@ export function App() {
     return added.length;
   }
 
-  /** Umetanje → Cokla / Radna ploha za označene (ili sve) donje elemente; pravila u lib/kitchen-inserts.ts. */
+  /** Umetanje → Cokla / Radna ploča za označene (ili sve) donje elemente; pravila u lib/kitchen-inserts.ts. */
   function insertKitchenParts(kind: "plinth" | "worktop" | "ceiling") {
     try {
-      if (!project || project.inspection.format !== "corpus-s3d") throw new Error("Cokla i radna ploha se dodaju samo u S3D projekat.");
+      if (!project || project.inspection.format !== "corpus-s3d") throw new Error("Cokla i radna ploča se dodaju samo u S3D projekat.");
       const all = project.inspection.elements;
       const chosen = groupSelection.length >= 2 ? groupSelection.map((index) => all[index]!).filter(Boolean) : all;
       const runs = kind === "ceiling" ? findBaseRuns(chosen, 5, groupSelection.length >= 2 ? () => true : isWallCabinet) : findBaseRuns(chosen);
-      if (runs.length === 0) throw new Error("Nema donjih elemenata na podu (pod pravim uglom) za koje bi se dodala " + (kind === "plinth" ? "cokla." : kind === "ceiling" ? "stropna ploha." : "radna ploha."));
+      if (runs.length === 0) throw new Error("Nema donjih elemenata na podu (pod pravim uglom) za koje bi se dodala " + (kind === "plinth" ? "cokla." : kind === "ceiling" ? "stropna ploha." : "radna ploča."));
       const planned = kind === "plinth" ? plinthInserts(runs) : kind === "ceiling" ? ceilingPlateInserts(runs) : worktopInserts(runs);
       const { kept, skipped } = withoutExisting(planned, all);
       const count = appendE3dSources(kept.map((insert) => ({ sourceFile: `${insert.spec.name}.E3D`, sourceXml: kitchenInsertSource(insert) })));

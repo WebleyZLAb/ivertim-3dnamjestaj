@@ -43,6 +43,6 @@ export function CutoutPanel({ board, boardIndex, canEdit, onEdit }: { board: Cor
       <div className="gola-cuts-message" role="status">{notice || problem}</div>
       <button className="primary-command" disabled={Boolean(problem)} onClick={() => run((xml, path) => addCorpusE3dBoardCutout(xml, boardIndex, rect, path), "Usjecanje je dodano na ploču.")}>Dodaj usjecanje</button>
     </>}
-    {!canEdit && <p className="empty-copy">Usjecanje je dostupno za element dodat iz biblioteke ili umetnut (npr. Radna ploha).</p>}
+    {!canEdit && <p className="empty-copy">Usjecanje je dostupno za element dodat iz biblioteke ili umetnut (npr. Radna ploča).</p>}
   </section>;
 }
