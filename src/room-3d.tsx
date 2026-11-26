@@ -1,5 +1,7 @@
 import { corpusRoomCameraSessions, type CorpusCameraView } from "../lib/corpus-camera-session";
 import { corpusDisplayCode } from "../lib/corpus-board-export";
+import { elementModelRef } from "../lib/element-model-ref";
+import { attachElementModel } from "./element-model-3d";
 import { createCorpusDragMotion, resolveCorpusDragMotion, type CorpusDragMotion } from "../lib/corpus-drag-motion";
 import { corpusDragBody, type DragBody, type DragContact } from "../lib/corpus-drag-snap";
 import { corpusBoardRenderTransform } from "../lib/corpus-render-transform";
@@ -299,6 +301,7 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
       }
 
       const materials: Array<{ boardIndex: number; material: THREE.MeshStandardMaterial; baseColor: THREE.ColorRepresentation }> = [];
+      const modelPlaceholders: THREE.Object3D[] = [];
       for (const [boardIndex, board] of element.boards.entries()) {
         const boardSelected = isSelected && (selectedBoardRef.current === null || selectedBoardRef.current === boardIndex);
         const boardGrouped = isSelected && boardGroupSelectionRef.current.has(boardIndex);
@@ -306,10 +309,14 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
         if (!boardMesh) continue;
         boardMesh.edges.visible = showBoardEdges || displayMode === "lines" || displayMode === "solid-lines" || displayMode === "drilling";
         group.add(boardMesh.mesh, boardMesh.edges, boardMesh.pickMesh);
+        modelPlaceholders.push(boardMesh.mesh, boardMesh.edges);
         pickable.push(boardMesh.pickMesh);
         materials.push({ boardIndex, material: boardMesh.material, baseColor: boardMesh.baseColor });
       }
       visualRefs.current.set(element, { materials, envelope, group });
+      // Element s 3D modelom (npr. ručka): kvadar mjera elementa se zamjenjuje modelom čim se učita.
+      const modelPath = elementModelRef(element.description);
+      if (modelPath && modelPlaceholders.length > 0) attachElementModel(group, modelPlaceholders, modelPath);
       elementIndex += 1;
 
       for (const child of element.children) addElement(group, child, root);

@@ -2,6 +2,7 @@ import type { RoomDisplayMode } from "./room-3d";
 import { GolaCutsDialog } from "./gola-cuts-dialog";
 import { CutoutPanel } from "./cutout-panel";
 import { HandleDialog } from "./handle-dialog";
+import { withElementModelRef } from "../lib/element-model-ref";
 import { corpusBoardCutouts } from "../lib/corpus-cutouts";
 import { corpusBoardCutoutMpr } from "../lib/mpr-export";
 import { corpusElementHettichBores } from "../lib/corpus-hettich-door";
@@ -2144,7 +2145,7 @@ export function App() {
         if(target)try{sourceXml=writeCorpusE3dGeometryCopy(target.source.sourceXml,[target.source.originalElement],[project.inspection.elements[target.rootIndex]!]);}catch(e){message=e instanceof Error?e.message:String(e);}
         return <GolaCutsDialog key={findCorpusElementPath(project.inspection.elements,selected)?.join(".")} element={selected} sourceXml={sourceXml} elementPath={target?.elementPath??[0]} message={message} onClose={()=>setGolaCutsOpen(false)} onApply={xml=>{if(target)applyStructuredE3dSource(target,xml,selectedBoardIndex);}}/>;
       })()}
-      {handleOpen && selected && <HandleDialog key={findCorpusElementPath(project.inspection.elements, selected)?.join(".")} element={selected} files={libraryFiles.map((file) => ({ path: libraryFilePath(file), text: () => file.text() }))} onClose={() => setHandleOpen(false)} onAdd={(insert) => { try { appendE3dSources([{ sourceFile: `${insert.spec.name}.E3D`, sourceXml: kitchenInsertSource(insert) }]); setLibraryNotice("Ručkica je dodana na frontu kao element."); setError(null); } catch (reason) { setError(reason instanceof Error ? reason.message : "Ručkica nije dodana."); } }} />}
+      {handleOpen && selected && <HandleDialog key={findCorpusElementPath(project.inspection.elements, selected)?.join(".")} element={selected} files={libraryFiles.map((file) => ({ path: libraryFilePath(file), text: () => file.text() }))} onClose={() => setHandleOpen(false)} onAdd={(insert) => { try { const source = kitchenInsertSource(insert); appendE3dSources([{ sourceFile: `${insert.spec.name}.E3D`, sourceXml: insert.modelPath ? withElementModelRef(source, insert.modelPath) : source }]); setLibraryNotice("Ručkica je dodana na frontu kao element."); setError(null); } catch (reason) { setError(reason instanceof Error ? reason.message : "Ručkica nije dodana."); } }} />}
       {libraryOpen && project.inspection.format === "corpus-s3d" && (
         <ElementLibraryDialog key={libraryKind} kind={libraryKind} onKindChange={setLibraryKind} localFiles={localCorpus?.files ?? []} files={libraryFiles} onChooseFolder={() => libraryInputRef.current?.click()} onClose={() => setLibraryOpen(false)} onAdd={(sourceFile, sourceXml) => {
           try { addE3dSource(sourceFile, sourceXml); } catch (reason) { setError(reason instanceof Error ? reason.message : "Element nije moguće dodati."); }

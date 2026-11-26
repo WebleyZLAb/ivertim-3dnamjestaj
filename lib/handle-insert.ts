@@ -10,7 +10,9 @@ import type { KitchenInsert } from "./kitchen-inserts.ts";
  * pozicija + X·(cos θ, −sin θ) + Z·(−sin θ, −cos θ). Fronta (SMJER 1) zauzima Z od položaja do položaja + debljina, dakle
  * njena vanjska strana je na Z = položaj; ručka izlazi iz nje u negativnom Z smjeru.
  */
-export type HandleModel = { name: string; width: number; height: number; depth: number };
+export type HandleModel = { name: string; width: number; height: number; depth: number; /** 3D model (relativno od `Modeli`), ako postoji. */ modelPath?: string | null };
+
+export type HandleInsertResult = KitchenInsert & { modelPath: string | null };
 
 /** Fronta unutar elementa (i njegovih pod-elemenata): ploča i zbir pomaka pod-elemenata od korijenskog elementa. */
 export type HandleFront = { label: string; board: CorpusS3dBoard; offset: readonly [number, number, number] };
@@ -53,7 +55,7 @@ const rightAngle = (angle: number | null): number | null => {
 };
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
-export function handleInsert(options: HandleInsertOptions): KitchenInsert {
+export function handleInsert(options: HandleInsertOptions): HandleInsertResult {
   const { element, handle } = options;
   const front = options.front.board;
   if (front.height === null || front.width === null || front.thickness === null || front.position.some((value) => value === null)) throw new Error("Fronta nema potpune mjere.");
@@ -89,5 +91,6 @@ export function handleInsert(options: HandleInsertOptions): KitchenInsert {
     },
     position: [round3(ex + localX * cos + localZ * -sin), round3(ey + localY), round3(ez + localX * -sin + localZ * -cos)],
     angle,
+    modelPath: handle.modelPath ?? null,
   };
 }
