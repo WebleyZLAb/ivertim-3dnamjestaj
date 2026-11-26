@@ -1,5 +1,8 @@
 import type { RoomDisplayMode } from "./room-3d";
 import { GolaCutsDialog } from "./gola-cuts-dialog";
+import { CutoutDialog } from "./cutout-dialog";
+import { corpusBoardCutouts } from "../lib/corpus-cutouts";
+import { corpusBoardCutoutMpr } from "../lib/mpr-export";
 import { LibraryFolderTree, LibraryElementCard } from "./library-browser-parts";
 import { libraryDisplayPath, libraryFolders, libraryChildren, libraryMatches, libraryItemKind, type LibraryKind } from "../lib/corpus-library-browser";
 import { decodeCorpusTextDocument } from "../lib/corpus-text";
@@ -252,6 +255,7 @@ export function App() {
   const [libraryFiles, setLibraryFiles] = useState<readonly LibraryElementFile[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [golaCutsOpen,setGolaCutsOpen]=useState(false);
+  const [cutoutOpen,setCutoutOpen]=useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [elementCreatorOpen, setElementCreatorOpen] = useState(false);
   const [macroFiles, setMacroFiles] = useState<readonly LibraryElementFile[]>([]);
@@ -576,7 +580,7 @@ export function App() {
   function loadProject(fileName: string, fileSize: number, sourceXml: string, inspection: CorpusS3dInspection) {
     editorSession.current = null;
     setStartupOpen(false); setViewMode("threeD"); setDocumentWindows([]); setMaterialReplacementOpen(false); setRightTab("elements");
-    setLibraryOpen(false); setGolaCutsOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
+    setLibraryOpen(false); setGolaCutsOpen(false); setCutoutOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setGeneratorOpen(false); setElementCreatorOpen(false);
     void rememberProject({ fileName, fileSize, sourceXml }).then(setRecentProjects).catch(() => setRecentError("Nedavne projekte nije moguće sačuvati."));
 
     const standaloneE3dSource = inspection.format === "corpus-e3d" && inspection.elements[0]
@@ -716,6 +720,7 @@ export function App() {
     try { const inspection = /\.e3d$/i.test(entry.fileName) ? parseCorpusE3d(entry.sourceXml) : parseCorpusS3d(entry.sourceXml); loadProject(entry.fileName, entry.fileSize, entry.sourceXml, inspection); } catch (reason) { setError(reason instanceof Error ? reason.message : "Projekat nije moguće otvoriti."); }
   }
   const openLibrary = () => { setLibraryKind("elements"); activateWindow("library"); setLibraryOpen(true); };
+  const openCutout = () => { activateWindow("cutout"); setCutoutOpen(true); };
   const openGolaCuts = () => { activateWindow("gola-cuts"); setGolaCutsOpen(true); };
   const openHardwareLibrary = () => { setLibraryKind("hardware"); activateWindow("library"); setLibraryOpen(true); };
   const menus: DesktopMenu[] = [
@@ -730,10 +735,10 @@ export function App() {
     ] },
     { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("ceiling") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
+    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("ceiling") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Usjecanje radne ploče…", disabled: !selected, onClick: openCutout }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
     { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Izvještaji (Ispiši)…", disabled: !project, onClick: () => { activateWindow("reports"); setReportOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
-    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: () => exportBoardCsv(true) }, { label: "CSV po pločama, ne zbrajaj iste…", disabled: !project, onClick: () => exportBoardCsv(false) }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
+    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: () => exportBoardCsv(true) }, { label: "CSV po pločama, ne zbrajaj iste…", disabled: !project, onClick: () => exportBoardCsv(false) }, { label: "MPR usjecanja radne ploče…", disabled: !selected, onClick: exportCutoutMpr }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
   ];
@@ -1847,6 +1852,20 @@ export function App() {
   }
 
   /** Izvoz po pločama (profil Ivertim, kao Corpusov corpus.CSV): jedan red po ploči, bez zaglavlja. */
+  /** MPR programi (glodanje usjecanja) za ploče izabranog elementa koje imaju usjecanja; jedan fajl po ploči. */
+  function exportCutoutMpr() {
+    if (!selected) return;
+    const boards = selected.boards.filter((board) => corpusBoardCutouts(board).length > 0);
+    if (!boards.length) { setError("Izabrani element nema ploča s usjecanjem."); return; }
+    try {
+      boards.forEach((board, index) => {
+        const text = corpusBoardCutoutMpr(board, { partName: board.name || selected.name, materialName: board.materialName || board.materialUid });
+        downloadText(`${(board.name || selected.name).replace(/[^\w.-]+/g, "_")}${boards.length > 1 ? `-${index + 1}` : ""}.mpr`, text, "text/plain;charset=windows-1250");
+      });
+      setError(null);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "MPR nije moguće napraviti."); }
+  }
+
   function exportBoardCsv(merge = true) {
     if (!project) return;
     const rows = corpusBoardExportRows(project.inspection.elements, { label: materialLabel, details: materialDetails, edgeCode: edgeCodeOf }, { merge });
@@ -2109,6 +2128,13 @@ export function App() {
         let message="Usijecanje je dostupno za element dodat iz biblioteke ili samostalni E3D. Učitaj element iz biblioteke pa izaberi njegove stranice.";
         if(target)try{sourceXml=writeCorpusE3dGeometryCopy(target.source.sourceXml,[target.source.originalElement],[project.inspection.elements[target.rootIndex]!]);}catch(e){message=e instanceof Error?e.message:String(e);}
         return <GolaCutsDialog key={findCorpusElementPath(project.inspection.elements,selected)?.join(".")} element={selected} sourceXml={sourceXml} elementPath={target?.elementPath??[0]} message={message} onClose={()=>setGolaCutsOpen(false)} onApply={xml=>{if(target)applyStructuredE3dSource(target,xml,selectedBoardIndex);}}/>;
+      })()}
+      {cutoutOpen && selected && (()=>{
+        const target=structuredE3dTarget(undefined,true);
+        let sourceXml:string|null=null;
+        let message="Usjecanje je dostupno za element dodat iz biblioteke ili umetnut (npr. Radna ploha). Izaberi takav element.";
+        if(target)try{sourceXml=writeCorpusE3dGeometryCopy(target.source.sourceXml,[target.source.originalElement],[project.inspection.elements[target.rootIndex]!]);}catch(e){message=e instanceof Error?e.message:String(e);}
+        return <CutoutDialog key={findCorpusElementPath(project.inspection.elements,selected)?.join(".")} element={selected} sourceXml={sourceXml} elementPath={target?.elementPath??[0]} message={message} initialBoard={selectedBoardIndex} onClose={()=>setCutoutOpen(false)} onApply={(xml,boardIndex)=>{if(target)applyStructuredE3dSource(target,xml,boardIndex);}}/>;
       })()}
       {libraryOpen && project.inspection.format === "corpus-s3d" && (
         <ElementLibraryDialog key={libraryKind} kind={libraryKind} onKindChange={setLibraryKind} localFiles={localCorpus?.files ?? []} files={libraryFiles} onChooseFolder={() => libraryInputRef.current?.click()} onClose={() => setLibraryOpen(false)} onAdd={(sourceFile, sourceXml) => {

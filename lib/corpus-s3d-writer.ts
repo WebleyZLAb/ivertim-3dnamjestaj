@@ -1,6 +1,7 @@
 import { validateStraightContour } from "./corpus-contour.ts";
 import type { CorpusS3dElement, CorpusS3dHole, CorpusS3dRoom } from "./corpus-s3d.ts";
 import { createCorpusWorkingCopyFile } from "./corpus-model.ts";
+import { appendCorpusRectCutout, removeCorpusCutout } from "./corpus-cutouts.ts";
 
 const ELEMENT_ATTRIBUTE_KEYS = ["EXPOX", "EYPOS", "EZPOS", "ESIRINA", "EVISINA", "EDUBINA", "EKUT", "EXKUT", "EZKUT"] as const;
 const ELEMENT_IDENTITY_ATTRIBUTE_KEYS = ["ENAME", "ESIFRA", "ECLAS", "EVISIBLE", "EEDITABLE", "ELOCKED"] as const;
@@ -1126,4 +1127,27 @@ export function readCorpusGolaSettings(xml:string,boardIndex:number,elementPath:
  const board=findRootBoardFragments(xml,elementPath).boards[boardIndex];if(!board)return null;
  const marker=directXmlChildren(xml.slice(board.start,board.end)).find(child=>child.name==="IVERTIM_GOLA");
  const value=marker?xmlAttribute(marker.raw,"SETTINGS"):null;return value?decodeXmlAttribute(value):null;
+}
+
+function editCutoutData(xml: string, boardIndex: number, elementPath: readonly number[], edit: (data: string) => string): string {
+  const board = findRootBoardFragments(xml, elementPath).boards[boardIndex];
+  if (!board) throw new Error(`Ploča ${boardIndex} nije pronađena.`);
+  const fragment = xml.slice(board.start, board.end);
+  const curve = scanXmlTags(fragment).find((token) => !token.closing && token.name === "KRIVULJE");
+  if (!curve) throw new Error("Ploča nema KRIVULJE zapis konture.");
+  const raw = xmlAttribute(curve.raw, "DATA");
+  if (raw === null) throw new Error("Ploča nema zapis koordinata konture.");
+  const data = edit(decodeXmlAttribute(raw));
+  const tag = setXmlAttribute(curve.raw, "DATA", data.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"));
+  return xml.slice(0, board.start) + fragment.slice(0, curve.start) + tag + fragment.slice(curve.end) + xml.slice(board.end);
+}
+
+/** Dodaje pravougaono usjecanje (mm) u KRIVULJE izabrane ploče E3D elementa; ostali zapisi ploče ostaju netaknuti. */
+export function addCorpusE3dBoardCutout(xml: string, boardIndex: number, rect: { x: number; z: number; width: number; depth: number }, elementPath: readonly number[] = [0]): string {
+  return editCutoutData(xml, boardIndex, elementPath, (data) => appendCorpusRectCutout(data, rect));
+}
+
+/** Briše usjecanje (redni broj među glodanim konturama ploče) iz E3D elementa. */
+export function removeCorpusE3dBoardCutout(xml: string, boardIndex: number, cutoutIndex: number, elementPath: readonly number[] = [0]): string {
+  return editCutoutData(xml, boardIndex, elementPath, (data) => removeCorpusCutout(data, cutoutIndex));
 }
