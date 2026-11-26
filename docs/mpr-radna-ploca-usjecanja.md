@@ -23,13 +23,13 @@ U S3D ploči usjecanje je sekundarna zatvorena kriva (`CURVE=0…`, `CNNAME=Line
 
 `corpusBoardCutouts(board)` vraća krive s `MILLDATA` (zatvorene, ≥ 3 tačke). Provjereno na uzorku (MARK NISIC: 1 usjecanje 530 × 430 @ 635, 85). Ista oznaka glodanja se koristi i za utore u leđima (npr. 1460 × 40), pa čitač vraća svaku glodanu konturu, ne samo sudoperu i ploču za kuhanje. U Kuhinja.S3D neke koordinate su negativne (npr. −280, −245), pa je ishodište tih krivih drugačije; to nije razjašnjeno.
 
-## Dodavanje usjecanja (Umetanje → Usjecanje radne ploče…)
+## Dodavanje usjecanja (Editor elemenata → kartica Bušenje)
 
 - `appendCorpusRectCutout(data, rect)` dodaje "Line" krivu s uglovima i `MILLDATA` iz uzorka; `addCorpusE3dBoardCutout(xml, boardIndex, rect, path)` to upisuje u `KRIVULJE DATA` ploče E3D izvora, a ostalo ostaje netaknuto.
-- Dijalog `src/cutout-dialog.tsx` (isti put kao Gola: element iz biblioteke ili umetnut, npr. Radna ploha, jer se mijenja njegov E3D izvor): izbor ploče, mjere od lijeve i zadnje ivice, širina i dubina, pregled (postojeće glodane konture sive, nova crvena), provjera da usjecanje ne izlazi iz ploče.
+- Panel `src/cutout-panel.tsx` u kartici Bušenje editora elemenata, za aktivnu ploču (meni Umetanje ostaje za elemente: radna ploha, grijaći elementi i slično; isti put kao Gola: element iz biblioteke ili umetnut, npr. Radna ploha, jer se mijenja njegov E3D izvor): mjere od lijeve i zadnje ivice, širina i dubina, pregled (postojeće glodane konture sive, nova crvena), provjera da usjecanje ne izlazi iz ploče.
 - Ploče koje je napravio Ivertim nemaju oznaku krive; kontura dobija `CURVE=-1` (Outline), a usjecanje sljedeći broj.
 - Zaobljeni uglovi: polje "Radijus uglova" (luk PTSTYLE=2 s PTARRA, isto kao Gola kontura).
-- Neprovjereno: da Corpus otvara ovako dopisan fajl (Corpus se ne može pokrenuti odavde). Nema formula `PTFFX`/`PTFFY` ni izvoza u `.mpr`. Brisanje: dugme "Obriši" uz svako glodano usjecanje u dijalogu (`removeCorpusE3dBoardCutout`).
+- Neprovjereno: da Corpus otvara ovako dopisan fajl (Corpus se ne može pokrenuti odavde). Nema formula `PTFFX`/`PTFFY`. Brisanje: dugme "Obriši" uz svako glodano usjecanje u panelu (`removeCorpusE3dBoardCutout`).
 
 ## Izvoz u .mpr (Export → "MPR usjecanja radne ploče…")
 
@@ -38,3 +38,7 @@ U S3D ploči usjecanje je sekundarna zatvorena kriva (`CURVE=0…`, `CNNAME=Line
 Provjera na pravim podacima (Y: disk): za MARK NISIC (ploča 1920 × 600) izlaz je **bajt po bajt isti** kao Corpusov `100000033.mpr`. Za SINIŠA BULIĆ kuhinju koordinate oba usjecanja (560 × 490 i 545 × 470) se poklapaju s `100000313.mpr`; ta ploča ima centrirane krive, pa čitač usjecanja sada primjenjuje pomak iz binarnog `CURVEDATA` (`pos`: Z, X u metrima).
 
 Razlike: komentari o rubnim trakama (`Left:/Right:/Back: Tip:...`) se ne pišu; alat je zadano `T6` (u S3D `MILLDATA` je `T100`, a Corpus u programu piše `T6`, razlog nije potvrđen); `.mpr` se sprema kao UTF-8 s ASCII imenima, ne kao windows-1250. Nije probano u mašini ni u WoodWOP-u.
+
+## Bušenja u `.mpr` nisu u S3D-u
+
+Provjera na projektu Siniša Buić - Ormari: 66 ploča ima broj programa, a **nijedna nema zapis rupa (`RUPE`) u S3D-u**, iako njihovi `.mpr` programi imaju do 43 vertikalna (`<102`) i 5 horizontalnih (`<103`) bušenja (Lijevi_bok/Desni_Bok, različite koordinate za lijevu i desnu stranu). Dakle bušenja nastaju pri izvozu iz Corpusovih pravila (spojnice, nosači polica, okovi), a ne iz podataka ploče. Zato se `.mpr` s bušenjima ne može napraviti iz S3D-a bez rekonstrukcije tih pravila. To je glavni preostali korak do programa koji zamjenjuje Corpus za mašinu; počinje se od `<102`/`<103` parametara (`XA`, `YA`, `TI` dubina, `DU` prečnik, `AB` razmak, `BM`) i poređenja lijeve i desne strane iz uzorka.

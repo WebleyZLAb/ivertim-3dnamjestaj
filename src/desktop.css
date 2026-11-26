@@ -400,5 +400,4 @@
 .plan-cad-preview { stroke:#d2541b;stroke-dasharray:24 16;pointer-events:none; }
 .plan-cad-catcher { cursor:crosshair; }
 .plan-cad-cursor { fill:#d2541b;pointer-events:none; }
-.desktop-window.cutout-window { width:min(560px,calc(100% - 24px));height:min(560px,calc(100% - 24px)); }
-.cutout-dialog { display:grid;gap:10px;padding:12px;overflow:auto; }
+.cutout-panel { display:grid;gap:10px;margin-top:12px; }
