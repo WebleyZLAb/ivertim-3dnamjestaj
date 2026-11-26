@@ -1,4 +1,5 @@
 import { corpusRoomCameraSessions, type CorpusCameraView } from "../lib/corpus-camera-session";
+import { corpusDisplayCode } from "../lib/corpus-board-export";
 import { createCorpusDragMotion, resolveCorpusDragMotion, type CorpusDragMotion } from "../lib/corpus-drag-motion";
 import { corpusDragBody, type DragBody, type DragContact } from "../lib/corpus-drag-snap";
 import { corpusBoardRenderTransform } from "../lib/corpus-render-transform";
@@ -676,7 +677,7 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
       <div className="drawing-selection">
         {selected ? selected.visible === false
           ? <><strong>{selected.name || "Neimenovan element"}</strong><span>Element je sakriven i nije prikazan u 3D prostoru.</span><button onClick={onOpenData}>Uredi element →</button></>
-          : <><strong>{selected.name || "Neimenovan element"}</strong><span>{selected.code || selected.className} · {formatDimensions(selected)} · Ose počinju u 0 elementa (X=0, Y=0, Z=0)</span><button onClick={onOpenData}>Uredi element →</button></>
+          : <><strong>{selected.name || "Neimenovan element"}</strong><span>{corpusDisplayCode(selected) || selected.className} · {formatDimensions(selected)} · Ose počinju u 0 elementa (X=0, Y=0, Z=0)</span><button onClick={onOpenData}>Uredi element →</button></>
           : <span>Izaberi element u 3D prikazu.</span>}
       </div>
       <p className="drawing-note"><strong>Status rekonstrukcije:</strong> Prikazane su ploče prema lokalnim koordinatama, smjeru i konturi iz S3D-a. Tekstura se koristi samo kada lokalni katalog ima jedan tačan MATUID i postojeću sliku; Corpus TEXX/TEXY/TEXZ skala i orijentacija još se ne nagađaju. RPL=0/1 bušenja na suprotnim glavnim plohama stvarne su šupljine; tamni cilindri ostaju za rijetki RPL=2 i ostale nedokazane ravni.</p>

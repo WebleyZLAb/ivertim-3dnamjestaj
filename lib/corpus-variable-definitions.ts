@@ -42,3 +42,14 @@ export function corpusVariableOptionValue(definition: CorpusVariableDefinition, 
   if (!numeric.test(literal)) return undefined;
   return definition.options.find(option => Number(option.value) === Number(literal))?.value;
 }
+
+/**
+ * Čitljiv prikaz Corpusovog naziva ili izbora: tekst pisan samo velikim slovima ("VIDLJIVOST_NOGICA", "DA") postaje
+ * "Vidljivost nogica", "Da". Ostali tekst (već mješovito pisan) ostaje isti.
+ */
+export function humanizeCorpusLabel(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed !== trimmed.toLocaleUpperCase() || !/\p{L}/u.test(trimmed)) return text;
+  const spaced = trimmed.replace(/_+/g, " ").toLocaleLowerCase();
+  return spaced.charAt(0).toLocaleUpperCase() + spaced.slice(1);
+}

@@ -65,6 +65,16 @@ export function expandCorpusCode(template: string, context: CodeContext): string
   });
 }
 
+/**
+ * Šifra elementa za prikaz: makroi (%NE%, %TPNE%...) se razvijaju kao u izvozu (npr. "%NE%" → naziv elementa), pa korisnik ne
+ * vidi sirovi zapis. Šifra bez makroa ostaje ista.
+ */
+export function corpusDisplayCode(element: { name: string; code: string }): string {
+  const code = element.code ?? "";
+  if (!code.includes("%")) return code;
+  return expandCorpusCode(code, { name: element.name, topName: element.name, topCode: "" }).trim();
+}
+
 const DIACRITICS: Record<string, string> = { č: "c", ć: "c", š: "s", ž: "z", đ: "d", Č: "C", Ć: "C", Š: "S", Ž: "Z", Đ: "D" };
 
 /** ASCII tekst kao u Corpusovom CSV-u: srpski i hrvatski dijakritici se zamjenjuju osnovnim slovom. */

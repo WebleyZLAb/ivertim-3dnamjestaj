@@ -90,3 +90,10 @@ Dodato lib/corpus-parametric.ts. Parser ploče izlaže izvorne XF/YF/ZF/HF/SF/DF
 Room3D klik na bilo koji pod-element bira njegov korijenski korpus. Označavanje korpusa bojom uključuje sve potomke, pa i fronte/ručkice; u editoru se zadržava odabir ploča. Oznake osa imaju transparentan canvas, bez bijelog pravougaonika i bez 0.
 
 Browser stvarni D1V: bez klika Sačuvaj, TIP_LEDJA NUT → NAKUCAVANJE mijenja Z -523 → -563 i širinu 580 → 596, Undo vraća obje mjere/izbor. Klik na frontu u osnovnom prozoru bira D1V i oboji cijeli korpus s frontom. Screenshot selection-fronts-xyz.png u folderu razgovora. 253 testa + typecheck/build prolaze. Izvorni Corpus nije mijenjan.
+
+## Čitljiv prikaz varijabli i šifre elementa — 26.11.2026
+
+- **Padajući meni umjesto sirovog polja:** varijabla s definisanim izborima (`varvalues.dat`: npr. `VIDLJIVOST_NOGICA` DA/NE, `TIP_LEDJA`, `t_b`) u kartici varijabli prikazuje samo padajući meni dok je vrijednost jedan od izbora; sirovi broj i rezultat izraza se ne prikazuju. Ako je vrijednost izraz koji nije među izborima, ostaje polje i opcija "Trenutni izraz".
+- **Nazivi:** Corpusov naziv i izbori pisani velikim slovima prikazuju se kao rečenica (`VIDLJIVOST_NOGICA` → "Vidljivost nogica", `DA` → "Da"); izvorni naziv ostaje ispod (`humanizeCorpusLabel`). Naziv u fajlu je bez dijakritika (npr. "Polozaj vezaca") i tako se prikazuje.
+- **Šifra elementa:** makroi u šifri (`%NE%`, `%TPNE%`...) se razvijaju kao u izvozu (`corpusDisplayCode`): ispod naziva elementa više ne piše sirovi `%NE%` nego naziv elementa. Šifra se u formi za identitet elementa i dalje uređuje sirova.
+- **Varijable bez definicije** (npr. `VDS`, `mat_a`, `boki_cokol`) ostaju polje za unos; definicija postoji samo za 187 varijabli iz `vvf.dat`.
