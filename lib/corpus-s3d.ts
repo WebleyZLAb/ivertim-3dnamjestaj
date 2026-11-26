@@ -37,6 +37,12 @@ export interface CorpusS3dMacroLink {
 export interface CorpusS3dBoard {
   formulas?: Readonly<Record<string, string>>;
   name: string;
+  /** Šablon šifre daske (`DSIFRA`, npr. "%NE%", "DONJI_1V"); makroi se razvijaju pri izvozu. */
+  code?: string;
+  /** Naziv programa (`PROGRAM`, `PROGRAM1`) i primjedba (`PRIMJEDBA`). */
+  program?: string;
+  program1?: string;
+  note?: string;
   boardType: number | null;
   frontType: number | null;
   position: readonly [number | null, number | null, number | null];
@@ -338,6 +344,10 @@ function parseBoard(board: XmlRecord): CorpusS3dBoard {
 
   return {
     name: text(board["@_DNAME"]),
+    code: text(board["@_DSIFRA"]),
+    program: text(board["@_PROGRAM"]),
+    program1: text(board["@_PROGRAM1"]),
+    note: text(board["@_PRIMJEDBA"]),
     formulas: Object.fromEntries(["XF", "YF", "ZF", "HF", "SF", "DF", "KXF", "KYF", "KZF"].map(key => [key, text(board["@_" + key])]).filter(([, value]) => value)),
     boardType: numeric(board["@_TIPDASKE"]),
     frontType: numeric(board["@_TIPFRONTE"]),

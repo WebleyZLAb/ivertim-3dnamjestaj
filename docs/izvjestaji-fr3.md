@@ -15,9 +15,9 @@ Imena polja su uzeta iz izraza u šablonima. Gradi se: `PROJECTS`/`PROJECT`, `PA
 
 **Pretpostavke koje nisu potvrđene u Corpusu:**
 - `DTYPE` dijela: 0 ploča, 1 fronta, 2 pomoćni dio, 3 nepoznato. (Šablon Mihai_HC koristi `DTYPE=4`, a Popis fronti `DTYPE=1`.)
-- `ACCESS` okova je 0 za sve; `PRICE` je 0 jer nemamo cijene.
+- `ACCESS` okova je 0 za sve. `PRICE` okova i traka je iz kataloga (`fittingPrices`, `Cijena` trake), a cijene ploča nisu u skupovima podataka.
 - Šifra materijala je `SIFRA` iz kataloga, a smjer vlakana `GOD=-1` iz kataloga (`GRAIN` 1/0).
-- Strane rubne trake (`STR0`–`STR3`): 0 i 2 duž visine, 1 i 3 duž širine (potvrđeno samo za dvije grupe, vidi `lekcije/01-osnovna-edukacija-41-46-utroseni-materijal.md`). Dužine su neto.
+- Strane rubne trake: `STR0`/`STR1` duž širine, `STR2`/`STR3` duž visine, plus 80 mm po strani (potvrđeno na svih 6 redova Corpusa, vidi `lekcije/01-osnovna-edukacija-41-46-utroseni-materijal.md`). Redoslijed Duž D / Šir Do / Šir Go unutar para je pretpostavka.
 - Podaci projekta: `KIME` iz `CREATOR` (NAZIV, PREZ), datum iz `INFO` (polje `dat`). Broj ponude, radni nalog i „Izradio" nisu pročitani (prazno).
 
 **Ne postoji:** `OPTIPART`, `OPTPAGE`, `OPTP` (optimizacija; etikete i krojni planovi), `VRMAT`, `OPE_ALL` (cijene/usluge), pa ti dijelovi šablona ostaju prazni, a prozor to piše uz svaki takav šablon.

@@ -76,8 +76,8 @@ test("skupovi podataka iz projekta i opis šablona", () => {
     </DASKE><POTROSNI><POTITEM TIP="1" KOMADA="4" NAZIV="KONFIRMAT" OZN="CONF" UID="u1"/></POTROSNI></ELEMENT></PROJECTFILE>`);
   const sets = buildReportDatasets(project.elements, readProjectInfo("<PROJECTFILE/>", "a.S3D"));
   assert.equal(sets.PROJECTS![0]!.NAME, "a.S3D");
-  assert.deepEqual([sets.PARTS!.length, sets.PARTS![0]!.ELEMENTID, sets.PARTS![0]!.DHEIGHT, sets.PARTS![0]!.DEH1CODE], [1, 1, 700, "K007"]);
-  assert.deepEqual([sets.ELMFIT![0]!.PARENTID, sets.ELMFIT![0]!.QTY, sets.PRJEDGE![0]!.LEN], [1, 4, 0.7]);
+  assert.deepEqual([sets.PARTS!.length, sets.PARTS![0]!.ELEMENTID, sets.PARTS![0]!.DHEIGHT, sets.PARTS![0]!.DEW1CODE], [1, 1, 700, "K007"]);
+  assert.deepEqual([sets.ELMFIT![0]!.PARENTID, sets.ELMFIT![0]!.QTY, sets.PRJEDGE![0]!.LEN], [1, 4, 0.58]);
   const info = describeTemplate(parseFr3(xml));
   assert.deepEqual(info.datasets, ["PARTS", "PROJECTS"]);
   assert.deepEqual(info.missing, []);

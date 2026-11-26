@@ -48,7 +48,9 @@ function readInfoDate(sourceXml: string): string {
 
 type Label = (uid: string, name: string) => string;
 /** Šifra materijala i smjer vlakana (GOD u katalogu: -1 ima vlakna) iz kataloga; null ako materijal nije u katalogu. */
-export type MaterialDetails = (uid: string, name: string) => { code: string; grain: boolean } | null;
+export type EdgeCode = (decorUid: string, edgeName: string) => string;
+export type ReportPrices = { fitting?: (uid: string) => number | null; edge?: (decorUid: string, edgeName: string) => number | null };
+export type MaterialDetails = (uid: string, name: string) => { code: string; grain: boolean; fullName?: string } | null;
 
 const edgeThickness = (name: string) => { const value = Number(/^(\d+(?:[.,]\d+)?)/.exec(name)?.[1]?.replace(",", ".")); return Number.isFinite(value) ? value : 0; };
 
@@ -58,10 +60,10 @@ function partType(board: CorpusS3dBoard): number {
   return kind === "board" ? 0 : kind === "front" ? 1 : kind === "auxiliary" ? 2 : 3;
 }
 
-export function buildReportDatasets(elements: readonly CorpusS3dElement[], info: ProjectInfo, label: Label = (uid, name) => name || uid, details: MaterialDetails = () => null): ReportDatasets {
+export function buildReportDatasets(elements: readonly CorpusS3dElement[], info: ProjectInfo, label: Label = (uid, name) => name || uid, details: MaterialDetails = () => null, edgeCode: EdgeCode = () => "", prices: ReportPrices = {}): ReportDatasets {
   const parts: Row[] = [];
-  const edgeTotals = new Map<string, { name: string; code: string; thickness: number; matName: string; length: number }>();
-  const rootEdges = new Map<number, Map<string, { name: string; code: string; thickness: number; matName: string; length: number }>>();
+  const edgeTotals = new Map<string, { name: string; code: string; thickness: number; matName: string; length: number; uid: string }>();
+  const rootEdges = new Map<number, Map<string, { name: string; code: string; thickness: number; matName: string; length: number; uid: string }>>();
   const roots: Row[] = [];
   const rootFittings: Row[] = [];
 
@@ -80,10 +82,10 @@ export function buildReportDatasets(elements: readonly CorpusS3dElement[], info:
           const height = board.height!, width = board.width!, thickness = board.thickness!;
           const side = (index: number) => {
             const edge = board.consumables.find((item) => item.type === "0" && item.sides[index]);
-            return edge ? { code: label(edge.materialUid, edge.materialName), th: edgeThickness(edge.name) } : { code: "", th: 0 };
+            return edge ? { code: edgeCode(edge.materialUid, edge.name) || label(edge.materialUid, edge.materialName), th: edgeThickness(edge.name) } : { code: "", th: 0 };
           };
-          // Strane 0 i 2 su duž visine, 1 i 3 duž širine (potvrđeno djelimično, vidi docs/lekcije).
-          const [h1, w1, h2, w2] = [side(0), side(1), side(2), side(3)];
+          // Duž L = STR2 (potvrđeno u Corpus izvozu), Duž D = STR3, Šir Do = STR0, Šir Go = STR1 (redoslijed u paru pretpostavljen).
+          const [h1, w1, h2, w2] = [side(2), side(0), side(3), side(1)];
           const material = details(board.materialUid, board.materialName);
           parts.push({
             PROJECTID: 1, ELEMENTID: rootId, ECODE: root.code || root.name, ENAME: elementName, DNAME: board.name || "Ploča", DQTY: 1, DTYPE: partType(board),
@@ -95,12 +97,14 @@ export function buildReportDatasets(elements: readonly CorpusS3dElement[], info:
           for (const edge of board.consumables) {
             if (edge.type !== "0") continue;
             const [s0, s1, s2, s3] = edge.sides;
-            const length = ((s0 ? height : 0) + (s2 ? height : 0) + (s1 ? width : 0) + (s3 ? width : 0)) / 1000;
-            if (length === 0) continue;
+            const sides = edge.sides.filter(Boolean).length;
+            // Kao u Corpusu: STR0/STR1 duž širine, STR2/STR3 duž visine, plus 80 mm po oblijepljenoj strani.
+            const length = ((s0 ? width : 0) + (s1 ? width : 0) + (s2 ? height : 0) + (s3 ? height : 0)) / 1000 + 0.08 * sides;
+            if (sides === 0) continue;
             const matName = label(edge.materialUid, edge.materialName);
             const key = `${edge.name}|${edge.materialUid || edge.materialName}`;
             for (const target of [edgeTotals, rootEdges.get(rootId) ?? rootEdges.set(rootId, new Map()).get(rootId)!]) {
-              const entry = target.get(key) ?? { name: edge.name, code: matName, thickness: edgeThickness(edge.name), matName, length: 0 };
+              const entry = target.get(key) ?? { name: edge.name, code: matName, thickness: edgeThickness(edge.name), matName, length: 0, uid: edge.materialUid };
               entry.length += length;
               target.set(key, entry);
             }
@@ -111,15 +115,15 @@ export function buildReportDatasets(elements: readonly CorpusS3dElement[], info:
     };
     visit([root]);
     for (const item of buildCorpusConsumablesList([root]).filter((entry) => entry.type === "1")) {
-      rootFittings.push({ PARENTID: rootId, NAME: item.name, CODE: item.designation || item.uid, CODE1: "", MCODE: "", MAN: "", CAT: "", IMG: "", JMJ: "kom", QTY: item.quantity, PRICE: 0, ACCESS: 0 });
+      rootFittings.push({ PARENTID: rootId, NAME: item.name, CODE: item.designation || item.uid, CODE1: "", MCODE: "", MAN: "", CAT: "", IMG: "", JMJ: "kom", QTY: item.quantity, PRICE: prices.fitting?.(item.uid) ?? 0, ACCESS: 0 });
     }
   });
   parts.sort((left, right) => Number(left.ELEMENTID) - Number(right.ELEMENTID));
 
-  const edgeRows = (map: Map<string, { name: string; code: string; thickness: number; matName: string; length: number }>, extra: Row = {}): Row[] =>
-    [...map.values()].map((edge) => ({ NAME: edge.name, CODE: edge.code, MATNAME: edge.matName, MATIMG: "", TH: edge.thickness, W: 0, CL: 0, LEN: Math.round(edge.length * 100) / 100, PRICE: 0, ...extra }));
+  const edgeRows = (map: Map<string, { name: string; code: string; thickness: number; matName: string; length: number; uid: string }>, extra: Row = {}): Row[] =>
+    [...map.values()].map((edge) => ({ NAME: edge.name, CODE: edge.code, MATNAME: edge.matName, MATIMG: "", TH: edge.thickness, W: 0, CL: 0, LEN: Math.round(edge.length * 100) / 100, PRICE: prices.edge?.(edge.uid, edge.name) ?? 0, ...extra }));
   const fittings: Row[] = buildCorpusConsumablesList(elements).filter((item) => item.type === "1").map((item) => ({
-    NAME: item.name, CODE: item.designation || item.uid, CODE1: "", CODE2: "", CODE3: "", MCODE: "", MAN: "", CAT: "", CATID: 0, SCAT: "", SCODE: "", SUP: "", IMG: "", JMJ: "kom", QTY: item.quantity, PRICE: 0, ACCESS: 0,
+    NAME: item.name, CODE: item.designation || item.uid, CODE1: "", CODE2: "", CODE3: "", MCODE: "", MAN: "", CAT: "", CATID: 0, SCAT: "", SCODE: "", SUP: "", IMG: "", JMJ: "kom", QTY: item.quantity, PRICE: prices.fitting?.(item.uid) ?? 0, ACCESS: 0,
   }));
   const elmEdges: Row[] = [...rootEdges.entries()].flatMap(([parentId, map]) => edgeRows(map, { PARENTID: parentId }));
   const project: Row = {

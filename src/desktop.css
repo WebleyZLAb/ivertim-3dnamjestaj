@@ -383,3 +383,20 @@
 .rd-grid { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
 .rd-checks { display:flex;flex-wrap:wrap;gap:4px 10px; }
 .rd-checks label { flex-direction:row;align-items:center;gap:4px; }
+
+.used-material-margins { border:1px solid #c3d0da;background:#f5f8fa;padding:4px 8px; }
+.used-material-margins summary { cursor:pointer;font-weight:600; }
+.used-material-margins label { display:flex;align-items:center;gap:8px;margin:4px 0; }
+.used-material-margins input[type="text"] { width:70px;padding:2px 5px;border:1px solid #aabfce; }
+
+.plan-cad-bar { display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #c3d0da;background:#f5f8fa;font-size:12px; }
+.plan-cad-bar button.active { background:#cfe0ee;font-weight:600; }
+.plan-cad-bar input[inputmode] { width:60px; }
+.plan-cad-walls { display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto; }
+.plan-cad-hint { color:#5b6b78; }
+.plan-cad-entity { stroke:#0b4f8a;pointer-events:stroke;cursor:pointer; }
+.plan-cad-entity.selected { stroke:#d2541b; }
+.plan-cad-label { fill:#0b4f8a;paint-order:stroke;stroke:#fff;stroke-width:3px;pointer-events:none; }
+.plan-cad-preview { stroke:#d2541b;stroke-dasharray:24 16;pointer-events:none; }
+.plan-cad-catcher { cursor:crosshair; }
+.plan-cad-cursor { fill:#d2541b;pointer-events:none; }

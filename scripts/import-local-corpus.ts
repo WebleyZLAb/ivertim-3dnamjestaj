@@ -5,6 +5,7 @@ import { readdir, readFile, mkdir, copyFile, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import { parseCorpusMaterialCatalog } from '../lib/corpus-material-library.ts';
 import { parseCorpusEdges } from '../lib/corpus-edge-library.ts';
+import { parseFittingPrices } from '../lib/corpus-fitting-prices.ts';
 const source = path.resolve(process.argv[2] ?? 'C:/CorpusSoftware64/CorpusSolutions');
 const target = path.resolve('public/local-corpus');
 const archive = path.resolve('.local-corpus-archive');
@@ -61,6 +62,8 @@ await copyFile(path.join(source,'Default.CPO'),path.join(archive,'Default.CPO'))
 await writeFile(path.join(archive,'inventory.json'),JSON.stringify({source,importedAt:new Date().toISOString(),files:archived},null,2));
 const variableDefinitions = await loadCorpusVariableDefinitions(path.join(source, "config"));
 const templates = uniqueFiles.filter(p => /^Template\/fr3\/.*\.fr3$/i.test(p)).sort((a,b)=>a.localeCompare(b,'sr'));
-const manifest = { variableDefinitions, version:1, importedAt:new Date().toISOString(), catalogs,elements,edges,macros,scripts,scriptEntries,templates,files:uniqueFiles };
+const fittingPrices: Record<string, number> = {};
+for (const file of uniqueFiles.filter(p => /^Potrosni\/[^/]+\.cxm$/i.test(p))) Object.assign(fittingPrices, parseFittingPrices(await readFile(path.join(target, file), 'utf8')));
+const manifest = { fittingPrices, variableDefinitions, version:1, importedAt:new Date().toISOString(), catalogs,elements,edges,macros,scripts,scriptEntries,templates,files:uniqueFiles };
 await writeFile(path.join(target,'manifest.json'), JSON.stringify(manifest));
 console.log(JSON.stringify({catalogs:catalogs.length,materials:catalogs.reduce((s,c)=>s+c.records.length,0),elements:elements.length,edges:edges.length,edgeGroups:edges.reduce((a,e)=>({...a,[e.thickness]:(a[e.thickness]??0)+1}),{} as Record<string,number>),files:uniqueFiles.length,macros:macros.length,scripts:scripts.length,archived:archived.length}));

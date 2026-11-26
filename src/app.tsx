@@ -61,6 +61,7 @@ import { analyzeCorpusMacroPayload, decodeCorpusText, type CorpusMacroAnalysis }
 import { corpusCmkDocumentFromDecodedPayloads, parseCorpusCmk, type CorpusCmkDocument } from "../lib/corpus-cmk";
 import { corpusMacroBoardContext, simulateCorpusCmk, type CorpusCmkOperationKind } from "../lib/corpus-cmk-simulation";
 import { resolveCorpusSawPaths, type CorpusSawResolution } from "../lib/corpus-saw";
+import { edgeRecordFor, indexCorpusEdges } from "../lib/corpus-edge-library";
 import { activeLocalCorpusCatalogs, createCorpusMaterialIndex, matchCorpusMaterial, parseCorpusMaterialCatalog, resolveCorpusMaterialPicturePath } from "../lib/corpus-material-library";
 import { analyzeCorpusBoardContact, type CorpusBoardContactFace, type CorpusBoardLocalContactRectangle } from "../lib/corpus-board-contact";
 import { corpusRasterOperationsToHoles, createCorpusLinearHolePattern, createCorpusRectangularHolePattern, mirrorCorpusHole, oppositeCorpusHoleFace, type CorpusHoleMirrorAxis, type CorpusHolePatternAxis } from "../lib/corpus-machining";
@@ -70,9 +71,13 @@ import { appendCorpusE3dBoard, createCorpusE3dSourceFromS3d, duplicateCorpusE3dB
 import { DEMO_S3D, EMPTY_S3D } from "./demo-project";
 import { SaveElementDialog, type SaveElementRequest } from "./save-element-dialog";
 import { UsedMaterialWindow } from "./used-material-window";
+import { usePlanCad, type PlanCadProps } from "./plan-cad-ui";
+import { findBaseRuns, kitchenInsertSource, plinthInserts, withoutExisting, worktopInserts } from "../lib/kitchen-inserts";
+import { distance as cadDistance, entitySegments as cadSegments, parseCadEntities, serializeCadEntities, wallSourceForSegment, type CadEntity } from "../lib/plan-cad";
 import { ReportWindow } from "./report-window";
+import { corpusBoardExportCsv, corpusBoardExportRows } from "../lib/corpus-board-export";
 import { buildReportDatasets, readProjectInfo } from "../lib/fastreport/project-datasets";
-import { buildCorpusUsedMaterial } from "../lib/corpus-used-material";
+import { buildCorpusUsedByElement, buildCorpusUsedMaterial } from "../lib/corpus-used-material";
 import { clearCorpusRecovery, loadCorpusRecovery, saveCorpusRecovery } from "./recovery-store";
 
 const Room3DView = lazy(() => import("./room-3d").then((module) => ({ default: module.Room3DView })));
@@ -150,7 +155,7 @@ type MaterialResolution =
   | { kind: "missing-picture"; name: string; pictureFile: string; reason: string };
 
 type LibraryElementFile = Pick<File, "name" | "webkitRelativePath" | "text" | "size">;
-type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; templates?: string[]; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
+type LocalCorpusLibrary = { version: number; variableDefinitions?: CorpusVariableDefinition[]; catalogs: CorpusMaterialCatalog[]; elements: string[]; edges: CorpusEdgeRecord[]; macros?: string[]; templates?: string[]; fittingPrices?: Record<string, number>; scripts?: string[]; scriptEntries?: { name: string; script: string; menu: string; resolved: string | null }[]; files: string[] };
 const LocalCorpusContext = createContext<LocalCorpusLibrary | null>(null);
 const DEFAULT_WALL_COLOR = "#ffffff";
 const localCorpusUrl = (path: string) => "/local-corpus/" + path.split("/").map(encodeURIComponent).join("/");
@@ -215,6 +220,25 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [usedMaterialOpen, setUsedMaterialOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const cadKey = project ? `ivertim.cad.${project.fileName.toLocaleLowerCase()}` : null;
+  // CAD linije se pamte u pregledniku po nazivu projekta (i mogu se spremiti u fajl iz trake CAD).
+  // Stanje nosi ključ projekta kojem pripada, pa se pri promjeni projekta stare linije nikad ne upišu pod novi ključ.
+  const [cadStore, setCadStore] = useState<{ key: string | null; entities: readonly CadEntity[] }>({ key: null, entities: [] });
+  const cadEntities = cadStore.key === cadKey ? cadStore.entities : [];
+  const setCadEntities = useCallback((entities: readonly CadEntity[]) => setCadStore({ key: cadKey, entities }), [cadKey]);
+  useEffect(() => {
+    if (!cadKey) { setCadStore({ key: null, entities: [] }); return; }
+    let entities: readonly CadEntity[] = [];
+    try { const stored = window.localStorage.getItem(cadKey); if (stored) entities = parseCadEntities(stored); } catch { /* neispravan ili nedostupan zapis */ }
+    setCadStore({ key: cadKey, entities });
+  }, [cadKey]);
+  useEffect(() => {
+    if (!cadKey || cadStore.key !== cadKey) return;
+    try {
+      if (cadStore.entities.length === 0) window.localStorage.removeItem(cadKey);
+      else window.localStorage.setItem(cadKey, serializeCadEntities(project?.fileName ?? "", cadStore.entities));
+    } catch { /* privatni prozor ili blokiran prostor */ }
+  }, [cadKey, cadStore]);
   const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
   const [saveElement, setSaveElement] = useState<{ xml: string; name: string; libraryPath: string | null; busy: boolean; message: string | null } | null>(null);
   const [roomDisplayMode, setRoomDisplayMode] = useState<RoomDisplayMode>("decor");
@@ -286,14 +310,36 @@ export function App() {
     const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
     return match && "record" in match ? match.record.name : name || uid;
   }, [materialIndex]);
-  const usedMaterial = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedMaterial(project.inspection.elements, materialLabel) : null, [project, usedMaterialOpen, materialLabel]);
+  const edgeIndex = useMemo(() => indexCorpusEdges(localCorpus?.edges ?? []), [localCorpus]);
+  const edgeCodeOf = useCallback((decorUid: string, edgeName: string, boardThickness?: number) => edgeRecordFor(edgeIndex, decorUid, edgeName, boardThickness)?.code ?? "", [edgeIndex]);
+  const usedPrices = useMemo(() => {
+    return {
+      material: (uid: string, name: string, thickness: number) => {
+        const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
+        if (!match || !("record" in match)) return null;
+        const thicknesses = match.record.fields["DEB"] ?? [];
+        const prices = match.record.fields["CIJENA"] ?? [];
+        const index = thicknesses.findIndex((value) => Number(value.replace(",", ".")) === thickness);
+        const price = index >= 0 ? Number((prices[index] ?? "").replace(",", ".")) : NaN;
+        return Number.isFinite(price) ? price : null;
+      },
+      edge: (decorUid: string, edgeName: string) => {
+        const record = edgeRecordFor(edgeIndex, decorUid, edgeName);
+        const price = Number(String(record?.fields["Cijena"] ?? "").replace(",", "."));
+        return record && Number.isFinite(price) ? price : null;
+      },
+      fitting: (uid: string) => localCorpus?.fittingPrices?.[uid] ?? null,
+    };
+  }, [localCorpus, materialIndex]);
+  const usedByElement = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedByElement(project.inspection.elements, materialLabel, usedPrices) : [], [project, usedMaterialOpen, materialLabel, usedPrices]);
+  const usedMaterial = useMemo(() => project && usedMaterialOpen ? buildCorpusUsedMaterial(project.inspection.elements, materialLabel, edgeCodeOf, usedPrices) : null, [project, usedMaterialOpen, materialLabel, edgeCodeOf, usedPrices]);
   const materialDetails = useCallback((uid: string, name: string) => {
     const match = materialIndex ? matchCorpusMaterial(materialIndex, uid, name) : null;
     if (!match || !("record" in match)) return null;
     const fields = match.record.fields;
-    return { code: fields.SIFRA?.[0] ?? "", grain: fields.GOD?.[0] === "-1" };
+    return { code: fields.SIFRA?.[0] ?? "", grain: fields.GOD?.[0] === "-1", fullName: fields.FULLNAME?.[0] || undefined };
   }, [materialIndex]);
-  const reportDatasets = useMemo(() => project && reportOpen ? buildReportDatasets(project.inspection.elements, readProjectInfo(project.sourceXml, project.fileName), materialLabel, materialDetails) : null, [project, reportOpen, materialLabel, materialDetails]);
+  const reportDatasets = useMemo(() => project && reportOpen ? buildReportDatasets(project.inspection.elements, readProjectInfo(project.sourceXml, project.fileName), materialLabel, materialDetails, edgeCodeOf, usedPrices) : null, [project, reportOpen, materialLabel, materialDetails, edgeCodeOf, usedPrices]);
   const loadReportTemplate = useCallback(async (path: string) => {
     const response = await fetch(localCorpusUrl(path));
     if (!response.ok) throw new Error(`Šablon nije dostupan: ${path}`);
@@ -683,10 +729,10 @@ export function App() {
     ] },
     { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
     { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
+    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
     { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
     { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Izvještaji (Ispiši)…", disabled: !project, onClick: () => { activateWindow("reports"); setReportOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
-    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
+    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: exportBoardCsv }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
     { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
     { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
   ];
@@ -1799,6 +1845,56 @@ export function App() {
     }
   }
 
+  /** Izvoz po pločama (profil Ivertim, kao Corpusov corpus.CSV): jedan red po ploči, bez zaglavlja. */
+  function exportBoardCsv() {
+    if (!project) return;
+    const rows = corpusBoardExportRows(project.inspection.elements, { label: materialLabel, details: materialDetails, edgeCode: edgeCodeOf });
+    downloadText(`${project.fileName.replace(/\.(?:s3d|e3d)$/i, "")}-corpus.CSV`, corpusBoardExportCsv(rows), "text/csv;charset=utf-8");
+  }
+
+  /** Zid duž svakog segmenta entiteta (element Wall iz biblioteke); ostaje se u tlocrtu. */
+  async function addWallsAlongEntity(entity: CadEntity, options: { thickness: number; align: "center" | "left" | "right" }): Promise<string> {
+    if (!project || project.inspection.format !== "corpus-s3d") throw new Error("Zidovi se dodaju samo u S3D projekat.");
+    const wallFile = libraryFiles.find((file) => libraryFilePath(file).toLowerCase() === "elmsav/wall_installations/wall.e3d");
+    if (!wallFile) throw new Error("Element Wall nije pronađen u biblioteci (Elmsav/Wall_installations/Wall.e3d).");
+    const segments = cadSegments(entity).filter(([a, b]) => cadDistance(a, b) >= 10);
+    if (segments.length === 0) throw new Error("Nema segmenta dovoljno dugog za zid.");
+    const template = await wallFile.text();
+    const count = appendE3dSources(segments.map(([a, b]) => ({ sourceFile: libraryFilePath(wallFile), sourceXml: wallSourceForSegment(template, a, b, { thickness: options.thickness, align: options.align }) })));
+    return `Dodano zidova: ${count}. Poništavanje (Ctrl+Z) vraća sve odjednom.`;
+  }
+
+  /** Dodaje više E3D elemenata projektu kao jedan korak za poništavanje; pogled ostaje isti. Vraća broj dodanih. */
+  function appendE3dSources(items: readonly { sourceFile: string; sourceXml: string }[]): number {
+    const added = items.map((item) => ({ ...item, imported: parseCorpusE3d(item.sourceXml).elements[0]! }));
+    setProject((current) => {
+      if (!current || added.length === 0) return current;
+      let sources = current.importedE3dSources.slice(0, current.inspection.elements.length - current.originalInspection.elements.length);
+      for (const item of added) sources = [...sources, { sourceFile: item.sourceFile, sourceXml: item.sourceXml, originalElement: item.imported }];
+      return { ...current, history: appendProjectHistory(current), future: [], inspection: { ...current.inspection, elements: [...current.inspection.elements, ...added.map((item) => item.imported)] }, importedE3dSources: sources, dirty: true };
+    });
+    return added.length;
+  }
+
+  /** Umetanje → Cokla / Radna ploha za označene (ili sve) donje elemente; pravila u lib/kitchen-inserts.ts. */
+  function insertKitchenParts(kind: "plinth" | "worktop") {
+    try {
+      if (!project || project.inspection.format !== "corpus-s3d") throw new Error("Cokla i radna ploha se dodaju samo u S3D projekat.");
+      const all = project.inspection.elements;
+      const chosen = groupSelection.length >= 2 ? groupSelection.map((index) => all[index]!).filter(Boolean) : all;
+      const runs = findBaseRuns(chosen);
+      if (runs.length === 0) throw new Error("Nema donjih elemenata na podu (pod pravim uglom) za koje bi se dodala " + (kind === "plinth" ? "cokla." : "radna ploha."));
+      const planned = kind === "plinth" ? plinthInserts(runs) : worktopInserts(runs);
+      const { kept, skipped } = withoutExisting(planned, all);
+      const count = appendE3dSources(kept.map((insert) => ({ sourceFile: `${insert.spec.name}.E3D`, sourceXml: kitchenInsertSource(insert) })));
+      const what = kind === "plinth" ? "cokli" : "radnih ploča";
+      setLibraryNotice(count === 0 ? `Nema šta dodati: ${skipped} ${what} već postoji.` : `Dodano: ${count} ${what}${skipped ? `, ${skipped} već postoji pa je preskočeno` : ""}. Mjere se mijenjaju u editoru; Ctrl+Z vraća sve odjednom.`);
+      setError(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Umetanje nije uspjelo.");
+    }
+  }
+
   function addE3dSource(sourceFile: string, sourceXml: string) {
     const inspection = parseCorpusE3d(sourceXml);
     if (inspection.elements.length !== 1) throw new Error("E3D za uvoz mora sadržati tačno jedan korijenski element.");
@@ -2021,7 +2117,7 @@ export function App() {
 
       {scriptLibraryOpen && localCorpus && <CorpusScriptLibrary library={localCorpus} onClose={() => setScriptLibraryOpen(false)} />}
       {reportOpen && reportDatasets && <DesktopWindow id="reports" title="Ispiši" className="desktop-document-window" initialMaximized onClose={() => setReportOpen(false)}><ReportWindow templates={localCorpus?.templates ?? []} loadTemplate={loadReportTemplate} datasets={reportDatasets} projectName={project.fileName} onTemplateSaved={(path) => setLocalCorpus((current) => current && !(current.templates ?? []).includes(path) ? { ...current, templates: [...(current.templates ?? []), path].sort((a, b) => a.localeCompare(b, "sr")), files: [...current.files, path] } : current)} /></DesktopWindow>}
-      {usedMaterialOpen && usedMaterial && <DesktopWindow id="used-material" title="Utrošeni materijal" className="desktop-document-window" onClose={() => setUsedMaterialOpen(false)}><UsedMaterialWindow used={usedMaterial} onOpenCutList={() => openDocument("cutlist")} onPrint={() => { activateWindow("reports"); setReportOpen(true); }} /></DesktopWindow>}
+      {usedMaterialOpen && usedMaterial && <DesktopWindow id="used-material" title="Utrošeni materijal" className="desktop-document-window" onClose={() => setUsedMaterialOpen(false)}><UsedMaterialWindow used={usedMaterial} byElement={usedByElement} onOpenCutList={() => openDocument("cutlist")} onPrint={() => { activateWindow("reports"); setReportOpen(true); }} onExport={exportBoardCsv} /></DesktopWindow>}
       {saveElement && <DesktopWindow id="save-element" title="Spremi element" onClose={() => setSaveElement(null)}><SaveElementDialog existingPath={saveElement.libraryPath} defaultName={saveElement.name} libraryElements={localCorpus?.elements ?? []} busy={saveElement.busy} message={saveElement.message} onSave={saveSelectedToLibrary} onDownload={downloadSelectedE3d} onCancel={() => setSaveElement(null)} /></DesktopWindow>}
       {materialReplacementOpen && materialLibrary && <DesktopWindow id="material-replacement" title="Provjera i zamjena materijala" className="desktop-document-window" onClose={() => setMaterialReplacementOpen(false)}><MaterialReplacement elements={project.inspection.elements} catalogs={materialLibrary.catalogs} onReplace={replaceProjectMaterial} /></DesktopWindow>}
       {macroLibraryOpen && (
@@ -2187,7 +2283,7 @@ export function App() {
         </aside>
 
         <section className="detail-panel drawing-panel desktop-scene">
-          {viewMode === "drawing" ? (            <ElevationView fileName={project.fileName} elements={project.inspection.elements} selected={selected} groupElements={groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean)} onSelect={selectElement} onToggleGroup={(element) => toggleGroupElement(project.inspection.elements.indexOf(element))} onOpenData={() => openDocument("data")} />) : (            <Suspense fallback={<div className="three-loading"><span /><strong>Pripremam 3D prikaz…</strong></div>}>
+          {viewMode === "drawing" ? (            <ElevationView cad={{ fileName: project.fileName, entities: cadEntities, onChange: setCadEntities, onAddWalls: addWallsAlongEntity }} fileName={project.fileName} elements={project.inspection.elements} selected={selected} groupElements={groupSelection.map((index) => project.inspection.elements[index]!).filter(Boolean)} onSelect={selectElement} onToggleGroup={(element) => toggleGroupElement(project.inspection.elements.indexOf(element))} onOpenData={() => openDocument("data")} />) : (            <Suspense fallback={<div className="three-loading"><span /><strong>Pripremam 3D prikaz…</strong></div>}>
               <Room3DView
                 key={corpusRoomCameraSessions.key(project.originalInspection)}
                 cameraScope={project.originalInspection}
@@ -2954,6 +3050,7 @@ function ElementTree({ elements, query, selected, selectedBoardIndex, groupSelec
 }
 
 type ElevationViewProps = {
+  cad?: PlanCadProps;
   fileName: string;
   elements: readonly CorpusS3dElement[];
   selected: CorpusS3dElement | null;
@@ -2963,15 +3060,10 @@ type ElevationViewProps = {
   onOpenData(): void;
 };
 
-function ElevationView({ fileName, elements, selected, groupElements, onSelect, onToggleGroup, onOpenData }: ElevationViewProps) {
+function ElevationView({ fileName, elements, selected, groupElements, onSelect, onToggleGroup, onOpenData, cad }: ElevationViewProps) {
   const [projection, setProjection] = useState<CorpusDrawingProjection>("front");
   const shapes = elements.map((element) => corpusDrawingShape(element, projection)).filter((shape) => shape !== null);
   const groupBounds = corpusDrawingGroupBounds(groupElements, projection);
-
-  const hiddenCount = elements.filter(element => element.visible === false).length;
-  if (!shapes.length) {
-    return <div className="empty-details"><span>⌗</span><h2>{hiddenCount === elements.length && hiddenCount > 0 ? "Svi elementi su sakriveni" : "Nema geometrije za nacrt"}</h2><p>{hiddenCount === elements.length && hiddenCount > 0 ? "Sakriveni elementi ne ulaze u nacrt ni njegov izvoz. Uključi vidljivost u stablu projekta." : "Vidljivi elementi nemaju potpun X/Y/Z položaj i dimenzije za ovu projekciju."}</p></div>;
-  }
 
   const minH = Math.min(0, ...shapes.map(({ bounds }) => bounds.minH));
   const maxH = Math.max(0, ...shapes.map(({ bounds }) => bounds.maxH));
@@ -2981,6 +3073,13 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
   const viewWidth = Math.max(1000, maxH - minH + padding * 2);
   const viewHeight = Math.max(1000, maxV - minV + padding * 2);
   const toScreenV = (value: number) => maxV + padding - value;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const planCad = usePlanCad(projection === "top" ? cad : undefined, { svgRef, maxV, padding, viewWidth, viewHeight, minH });
+  const hiddenCount = elements.filter(element => element.visible === false).length;
+  if (!shapes.length) {
+    return <div className="empty-details"><span>⌗</span><h2>{hiddenCount === elements.length && hiddenCount > 0 ? "Svi elementi su sakriveni" : "Nema geometrije za nacrt"}</h2><p>{hiddenCount === elements.length && hiddenCount > 0 ? "Sakriveni elementi ne ulaze u nacrt ni njegov izvoz. Uključi vidljivost u stablu projekta." : "Vidljivi elementi nemaju potpun X/Y/Z položaj i dimenzije za ovu projekciju."}</p></div>;
+  }
+
   const labels = projection === "front"
     ? ["Frontalni nacrt", "X/Y položaj elemenata", "X", "Y"]
     : projection === "top"
@@ -2998,8 +3097,10 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
         <div><div className="view-switch" aria-label="Projekcija nacrta">{(["front", "top", "side"] as const).map((view) => <button key={view} aria-current={projection === view ? "true" : undefined} className={projection === view ? "active" : ""} onClick={() => setProjection(view)}>{view === "front" ? "Prednji" : view === "top" ? "Gornji" : "Bočni"}</button>)}<button onClick={() => downloadText(`${fileName.replace(/\.(?:s3d|e3d)$/i, "")}-${projection === "front" ? "PREDNJI" : projection === "top" ? "GORNJI" : "BOCNI"}-NACRT.svg`, corpusDrawingSvg(elements, projection, selected, groupElements), "image/svg+xml;charset=utf-8")}>Izvezi SVG</button></div><div className="drawing-legend"><span><i className="legend-normal" /> Element</span><span><i className="legend-selected" /> Izabran</span>{groupBounds && <span><i className="legend-group" /> Grupa</span>}</div></div>
       </div>
 
+      {planCad.toolbar}
       <div className="canvas-frame">
         <svg
+          ref={svgRef}
           className="elevation-svg"
           viewBox={`${minH - padding} 0 ${viewWidth} ${viewHeight}`}
           preserveAspectRatio="xMidYMid meet"
@@ -3077,6 +3178,7 @@ function ElevationView({ fileName, elements, selected, groupElements, onSelect, 
               </g>
             </g>;
           })()}
+          {planCad.layer}
         </svg>
         <div className="scale-chip"><span /> 500 mm mreža</div>
       </div>
