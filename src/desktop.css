@@ -1,5 +1,5 @@
 /* Corpus-style radna površina: meniji, alatke, dokumenti i panel sa tabovima. */
-:root { --desktop-top: 107px; --desktop-left: 48px; --desktop-right: 310px; --desktop-bottom: 50px; }
+:root { --desktop-top: 130px; --desktop-left: 48px; --desktop-right: 310px; --desktop-bottom: 50px; }
 .corpus-desktop.app-shell { height: 100dvh; min-height: 520px; grid-template-rows: 107px minmax(0,1fr) 24px; padding-bottom: 26px; background: #dae3eb; }
 .desktop-header { position: relative; z-index: 100; background: #e6edf3; border-bottom: 1px solid #9dabb8; font-family: 'Segoe UI',sans-serif; }
 .desktop-caption { height: 27px; display: flex; align-items: center; gap: 7px; padding: 0 10px; color: #f3f7fc; background: linear-gradient(#355c7e,#28465f); font-size: 11px; }
@@ -401,3 +401,28 @@
 .plan-cad-catcher { cursor:crosshair; }
 .plan-cad-cursor { fill:#d2541b;pointer-events:none; }
 .cutout-panel { display:grid;gap:10px;margin-top:12px; }
+
+/* Traka s karticama */
+.desktop-toolbar:has(> .ribbon) { height: auto; padding: 0; display: block; background: #f4f7fa; }
+.ribbon-tabs { display: flex; gap: 2px; padding: 3px 8px 0; background: #e3ecf2; border-bottom: 1px solid #a8bccb; }
+.ribbon-tabs button { padding: 4px 14px; color: #4b6578; background: transparent; border: 1px solid transparent; border-bottom: 0; border-radius: 3px 3px 0 0; font-size: 12px; }
+.ribbon-tabs button:hover { background: #d3e3ee; }
+.ribbon-tabs button[aria-selected=true] { color: #1f3b50; background: #f4f7fa; border-color: #a8bccb; margin-bottom: -1px; font-weight: 600; }
+.ribbon-body { display: flex; align-items: stretch; gap: 0; padding: 4px 6px; min-height: 76px; overflow-x: auto; }
+.ribbon-group { display: flex; flex-direction: column; justify-content: space-between; padding: 0 8px; border-right: 1px solid #c9d6df; }
+.ribbon-group:last-child { border-right: 0; }
+.ribbon-group-tools { display: flex; gap: 2px; align-items: flex-start; }
+.ribbon-group > small { padding-top: 2px; color: #6a7f8f; text-align: center; font-size: 10px; }
+.ribbon-button { position: relative; min-width: 54px; max-width: 86px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 6px 3px; color: #2b6b87; background: transparent; border: 1px solid transparent; border-radius: 3px; cursor: pointer; list-style: none; }
+.ribbon-button::-webkit-details-marker { display: none; }
+.ribbon-button > span { color: #2a3f4e; font-size: 10px; line-height: 1.15; text-align: center; }
+.ribbon-button:hover:not(:disabled) { background: #dcebf4; border-color: #9ec0d4; }
+.ribbon-button[aria-pressed=true] { background: #bcd7e7; border-color: #5b91af; }
+.ribbon-button:disabled { opacity: .35; cursor: default; }
+.ribbon-drop { position: relative; }
+.ribbon-drop.disabled > summary { opacity: .35; cursor: default; pointer-events: none; }
+.ribbon-drop > div { position: absolute; z-index: 250; top: 100%; left: 0; min-width: 190px; padding: 4px; background: #fafbfd; border: 1px solid #99aeba; box-shadow: 4px 7px 15px #172e4333; }
+.ribbon-drop > div button { display: block; width: 100%; padding: 7px 10px; color: #243745; background: transparent; border: 0; text-align: left; font-size: 11px; }
+.ribbon-drop > div button:hover:not(:disabled) { background: #d6e8f4; }
+.ribbon-drop > div button[aria-pressed=true] { background: #bcd7e7; font-weight: 600; }
+.ribbon-drop > div button:disabled { color: #a1a9af; cursor: default; }

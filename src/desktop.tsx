@@ -86,41 +86,30 @@ export function DesktopWindow({ id, title, children, onClose, className = "", in
   </section>, host);
 }
 
-export type DesktopCommand = { label: string; onClick(): void; disabled?: boolean; shortcut?: string; separator?: boolean };
-export type DesktopMenu = { label: string; items: DesktopCommand[] };
-export function DesktopHeader({ menus, children }: { menus: DesktopMenu[]; children: ReactNode }) {
+export function DesktopHeader({ children }: { children: ReactNode }) {
   const headerRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const close = (event: Event) => {
       if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (!(event instanceof KeyboardEvent) && headerRef.current?.contains(event.target as Node)) return;
+      if (!(event instanceof KeyboardEvent) && headerRef.current?.contains(event.target as Node) && (event.target as Element).closest?.("details[open]")) return;
       headerRef.current?.querySelectorAll("details[open]").forEach((node) => node.removeAttribute("open"));
     };
     window.addEventListener("pointerdown", close); window.addEventListener("keydown", close);
     return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", close); };
   }, []);
+  // Prozori se otvaraju ispod trake, pa se njena stvarna visina (ovisi o širini prozora) čuva u --desktop-top.
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => document.documentElement.style.setProperty("--desktop-top", `${Math.ceil(header.getBoundingClientRect().height)}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
   return <header className="desktop-header" ref={headerRef}>
     <div className="desktop-caption"><img className="desktop-brand-icon" src="/ivertim-3d.ico" alt="" aria-hidden="true" /><strong>Ivertim 3D</strong></div>
-    <nav className="desktop-menubar" aria-label="Glavni meniji" onKeyDown={(event) => {
-      const target = event.target as HTMLElement;
-      const details = target.closest("details");
-      if (!details) return;
-      const summary = details.querySelector("summary");
-      const commands = Array.from(details.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
-      const current = commands.indexOf(target as HTMLButtonElement);
-      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); details.removeAttribute("open"); summary?.focus(); }
-      else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-        event.preventDefault(); event.stopPropagation(); details.setAttribute("open", "");
-        const next = event.key === "Home" ? 0 : event.key === "End" ? commands.length - 1 : event.key === "ArrowDown" ? (current + 1) % commands.length : current < 0 ? commands.length - 1 : (current - 1 + commands.length) % commands.length;
-        commands[next]?.focus();
-      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-        event.preventDefault(); event.stopPropagation();
-        const all = Array.from(event.currentTarget.querySelectorAll("details")); const index = all.indexOf(details);
-        const next = all[(index + (event.key === "ArrowRight" ? 1 : all.length - 1)) % all.length];
-        const wasOpen = details.open; details.removeAttribute("open"); if (wasOpen) next?.setAttribute("open", ""); next?.querySelector("summary")?.focus();
-      }
-    }}>{menus.map((menu) => <details key={menu.label} onToggle={(event) => { if (event.currentTarget.open) headerRef.current?.querySelectorAll("details[open]").forEach((node) => { if (node !== event.currentTarget) node.removeAttribute("open"); }); }}><summary>{menu.label}</summary><div>{menu.items.map((item) => <button key={item.label} className={item.separator ? "menu-separator" : ""} disabled={item.disabled} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); item.onClick(); }}><span>{item.label}</span>{item.shortcut && <kbd>{item.shortcut}</kbd>}</button>)}</div></details>)}</nav>
-    <div className="desktop-toolbar" role="toolbar" aria-label="Glavna alatna traka">{children}</div>
+    <div className="desktop-toolbar" role="toolbar" aria-label="Glavna traka alata">{children}</div>
   </header>;
 }
 type ToolbarIcon = "saveElement" | "print" | "duplicate" | "drilling" | "lines" | "solidLines" | "kant" | "decor" | "bridges";
@@ -143,6 +132,55 @@ export function DesktopTool({ label, icon, variant = "linear", onClick, disabled
       ? <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={toolbarIconPaths[icon as ToolbarIcon]} /></svg>
       : <Icon name={icon as IconName} variant={variant} />}
   </button>;
+}
+
+export type RibbonGroup = { label: string; content: ReactNode };
+export type RibbonTab = { id: string; label: string; groups: RibbonGroup[] };
+
+/** Traka s karticama (kao u DraftSightu): kartica je skup grupa, a grupa ima naziv ispod svojih komandi. */
+export function DesktopRibbon({ tabs, initial }: { tabs: RibbonTab[]; initial?: string }) {
+  const storageKey = "ivertim.ribbonTab";
+  const [active, setActive] = useState(() => {
+    let saved: string | null = null;
+    try { saved = window.localStorage.getItem(storageKey); } catch { /* bez pamćenja */ }
+    return tabs.some((tab) => tab.id === saved) ? saved! : initial ?? tabs[0]!.id;
+  });
+  const tab = tabs.find((item) => item.id === active) ?? tabs[0]!;
+  const choose = (id: string) => { setActive(id); try { window.localStorage.setItem(storageKey, id); } catch { /* bez pamćenja */ } };
+  return <div className="ribbon">
+    <div className="ribbon-tabs" role="tablist" aria-label="Kartice trake">
+      {tabs.map((item) => <button key={item.id} role="tab" aria-selected={item.id === tab.id} onClick={() => choose(item.id)}>{item.label}</button>)}
+    </div>
+    <div className="ribbon-body" role="tabpanel">
+      {tab.groups.map((group) => <section key={group.label} className="ribbon-group" aria-label={group.label}><div className="ribbon-group-tools">{group.content}</div><small>{group.label}</small></section>)}
+    </div>
+  </div>;
+}
+
+/** Velika komanda trake: ikona i kratak naziv ispod. */
+export function RibbonButton({ label, icon, onClick, disabled, active, variant = "linear" }: { label: string; icon: IconName | ToolbarIcon; onClick(): void; disabled?: boolean; active?: boolean; variant?: IconVariant }) {
+  return <button className="ribbon-button" title={label} aria-pressed={active} disabled={disabled} onClick={onClick}>
+    {Object.hasOwn(toolbarIconPaths, icon)
+      ? <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={toolbarIconPaths[icon as ToolbarIcon]} /></svg>
+      : <Icon name={icon as IconName} variant={variant} size={26} />}
+    <span>{label}</span>
+  </button>;
+}
+
+export type RibbonChoice = { label: string; onClick(): void; disabled?: boolean; active?: boolean };
+
+/** Jedna ikona koja skuplja srodne opcije: klik otvara padajući popis (npr. načini prikaza ili pogledi). */
+export function RibbonDropdown({ label, icon, choices, disabled, variant = "linear" }: { label: string; icon: IconName | ToolbarIcon; choices: RibbonChoice[]; disabled?: boolean; variant?: IconVariant }) {
+  const current = choices.find((choice) => choice.active);
+  return <details className={`ribbon-drop${disabled ? " disabled" : ""}`} onClick={(event) => { if (disabled) event.preventDefault(); }}>
+    <summary className="ribbon-button" title={label}>
+      {Object.hasOwn(toolbarIconPaths, icon)
+        ? <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={toolbarIconPaths[icon as ToolbarIcon]} /></svg>
+        : <Icon name={icon as IconName} variant={variant} size={26} />}
+      <span>{current?.label ?? label} ▾</span>
+    </summary>
+    <div>{choices.map((choice) => <button key={choice.label} aria-pressed={choice.active} disabled={choice.disabled} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); choice.onClick(); }}>{choice.label}</button>)}</div>
+  </details>;
 }
 
 export function DesktopLoader({ onReady }: { onReady(): void }) {

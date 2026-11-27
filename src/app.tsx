@@ -32,7 +32,7 @@ import { corpusVariableDraftHasSourceNames } from "../lib/corpus-variable-draft"
 import { PanelArrayEditor } from "./panel-array-editor";
 import { ElementEditorWorkspace } from "./element-editor-workspace";
 import { Icon } from "./iconsax";
-import { DesktopHeader, DesktopLoader, DesktopTool, DesktopWindow, StartProjectWindow, type DesktopMenu, useDesktopWindows } from "./desktop";
+import { DesktopHeader, DesktopLoader, DesktopRibbon, DesktopTool, DesktopWindow, RibbonButton, RibbonDropdown, StartProjectWindow, type RibbonChoice, type RibbonTab, useDesktopWindows } from "./desktop";
 import { loadRecentProjects, rememberProject, type RecentProject } from "./recent-projects";
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -726,25 +726,6 @@ export function App() {
   const openHandle = () => { activateWindow("handle"); setHandleOpen(true); };
   const openGolaCuts = () => { activateWindow("gola-cuts"); setGolaCutsOpen(true); };
   const openHardwareLibrary = () => { setLibraryKind("hardware"); activateWindow("library"); setLibraryOpen(true); };
-  const menus: DesktopMenu[] = [
-    { label: "Projekat", items: [
-      { label: "Novi projekat", onClick: newDesktopProject }, { label: "Učitaj projekat…", onClick: () => inputRef.current?.click() },
-      { label: "Nedavni projekti…", onClick: () => { activateWindow("start"); setStartupOpen(true); } },
-      { label: "Sačuvaj radnu kopiju…", disabled: !project?.dirty, onClick: exportWorkingCopy, separator: true },
-      { label: "Učitaj radnu kopiju…", disabled: !project, onClick: () => workingCopyInputRef.current?.click() },
-      { label: "Izvezi Corpus projekat…", disabled: !project?.dirty, onClick: exportS3dCopy },
-      { label: "Vrati originalni projekat", disabled: !project?.dirty, onClick: resetWorkingCopy },
-      { label: "Zatvori projekat", disabled: !project, separator: true, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setGolaCutsOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
-    ] },
-    { label: "Uređivanje", items: [ { label: "Poništi", shortcut: "Ctrl+Z", disabled: !project?.history.length, onClick: undoWorkingCopy }, { label: "Ponovi", shortcut: "Ctrl+Y", disabled: !project?.future.length, onClick: redoWorkingCopy }, { label: "Svojstva izbora", disabled: !selected, onClick: () => setRightTab("properties") } ] },
-    { label: "Izgled", items: [ { label: "3D prostorija", disabled: !project, onClick: () => setViewMode("threeD") }, { label: "Tehnički nacrt", disabled: !project, onClick: () => setViewMode("drawing") }, { label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") } ] },
-    { label: "Umetanje", items: [ { label: "Učitaj element iz biblioteke…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Okovi…", disabled: project?.inspection.format !== "corpus-s3d", onClick: openHardwareLibrary }, { label: "Cokla", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploča", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => insertKitchenParts("ceiling") }, { label: "Usijecanje za Gola profile…", disabled: !selected, onClick: openGolaCuts }, { label: "Ručkica na front…", disabled: project?.inspection.format !== "corpus-s3d" || !selected, onClick: openHandle }, { label: "Makroi…", disabled: !project, onClick: () => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); } }, { label: "Skripte…", disabled: !localCorpus?.scripts?.length, onClick: () => { activateWindow("scripts"); setScriptLibraryOpen(true); } }, { label: "Dodaj E3D fajl…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => e3dImportInputRef.current?.click() }, { label: "Novi korpus…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("cabinet-generator"); setGeneratorOpen(true); } }, { label: "Novi element…", disabled: project?.inspection.format !== "corpus-s3d", onClick: () => { activateWindow("element-creator"); setElementCreatorOpen(true); } } ] },
-    { label: "Odabir", items: [ { label: "Označi sve elemente", disabled: !project, onClick: () => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); } }, { label: "Poništi grupni izbor", disabled: !groupSelection.length, onClick: () => setGroupSelection([]) } ] },
-    { label: "Kalkulacije", items: [ { label: "Provjera i zamjena materijala…", disabled: !project || !materialLibrary || documentWindows.includes("data"), onClick: () => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); } }, { label: "Utrošeni materijal…", disabled: !project, onClick: () => { activateWindow("used-material"); setUsedMaterialOpen(true); } }, { label: "Izvještaji (Ispiši)…", disabled: !project, onClick: () => { activateWindow("reports"); setReportOpen(true); } }, { label: "Materijali i krojna lista…", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Učitaj teksture materijala…", disabled: !project, onClick: () => materialLibraryInputRef.current?.click() } ] },
-    { label: "Export", items: [ { label: "Corpus S3D / E3D…", disabled: !project?.dirty, onClick: exportS3dCopy }, { label: "Krojna lista CSV…", disabled: !project, onClick: () => exportCutList() }, { label: "CSV po pločama (Corpus profil Ivertim)…", disabled: !project, onClick: () => exportBoardCsv(true) }, { label: "CSV po pločama, ne zbrajaj iste…", disabled: !project, onClick: () => exportBoardCsv(false) }, { label: "MPR usjecanja, utori i šarke…", disabled: !selected, onClick: exportCutoutMpr }, { label: "Potrošni materijal CSV…", disabled: !project, onClick: () => exportConsumables() } ] },
-    { label: "Prozori", items: [ { label: "Početni prozor", onClick: () => { activateWindow("start"); setStartupOpen(true); } }, { label: "Biblioteka elemenata", disabled: project?.inspection.format !== "corpus-s3d", onClick: openLibrary }, { label: "Proizvodne liste", disabled: !project, onClick: () => openDocument("cutlist") }, { label: "Postavke prostorije", disabled: !project, onClick: () => openDocument("room") } ] },
-    { label: "Pomoć", items: [ { label: "Osvježi aplikaciju", shortcut: "F5", onClick: () => { void refreshApplication(); } }, { label: "Otvori ugrađeni demo", onClick: () => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); } }, { label: "Kontrole i prečice", onClick: () => { activateWindow("help"); setHelpOpen(true); } } ] },
-  ];
   const canUseElement = Boolean(groupSelection.length < 2 && project && selected &&
     findCorpusElementPath(project.inspection.elements, selected)?.length === 1);
   const canInsertElement = project?.inspection.format === "corpus-s3d";
@@ -760,33 +741,95 @@ export function App() {
       link.click();
     };
   };
-  const chrome = <DesktopHeader menus={menus}>
-    <DesktopTool label="Novi projekat" icon="new" onClick={newDesktopProject} />
-    <DesktopTool label="Učitaj projekat" icon="open" onClick={() => inputRef.current?.click()} />
-    <DesktopTool label="Snimi projekat – radna kopija" icon="save" disabled={!project} onClick={exportWorkingCopy} />
-    <DesktopTool label="Učitaj element – E3D" icon="library" disabled={!canInsertElement} onClick={() => e3dImportInputRef.current?.click()} />
-    <DesktopTool label="Spremi element" icon="saveElement" disabled={!canUseElement} onClick={openSaveElement} />
-    <DesktopTool label="Štampaj" icon="print" disabled={!project || viewMode !== "threeD"} onClick={() => {
-      captureRoomRef.current = setPrintImage;
-    }} />
-    <details className="desktop-print-options">
-      <summary aria-label="Opcije štampe" title="Opcije štampe">▾</summary>
-      <div>
-        <button disabled={!project || viewMode !== "threeD"} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); saveViewImage(); }}>Spremi sliku</button>
-        <button disabled title="Corpus predlošci još nisu podržani">Predlošci</button>
-        <button disabled title="Corpus Meta report još nije podržan">Meta report</button>
-      </div>
-    </details>
-    <span className="desktop-toolbar-separator" />
-    <DesktopTool label="Poništi" icon="undo" disabled={!project?.history.length} onClick={undoWorkingCopy} />
-    <DesktopTool label="Dupliraj" icon="duplicate" disabled={!canUseElement || !canInsertElement} onClick={() => duplicateImportedElement()} />
-    <span className="desktop-toolbar-separator" />
-    <DesktopTool label="Linije + bušenja" icon="drilling" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "drilling"} onClick={() => chooseDisplay("drilling")} />
-    <DesktopTool label="Linije" icon="lines" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "lines"} onClick={() => chooseDisplay("lines")} />
-    <DesktopTool label="Linije bez nevidljivih" icon="solidLines" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "solid-lines"} onClick={() => chooseDisplay("solid-lines")} />
-    <DesktopTool label="Prikaz kantova" icon="kant" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "edge-check"} onClick={() => chooseDisplay("edge-check")} />
-    <DesktopTool label="Dekori" icon="decor" disabled={!project} active={viewMode === "threeD" && roomDisplayMode === "decor"} onClick={() => chooseDisplay("decor")} />
-    <DesktopTool label="Bridovi" icon="bridges" disabled={!project || viewMode !== "threeD"} active={showRoomBridges} onClick={() => setShowRoomBridges((value) => !value)} />
+  const notS3d = project?.inspection.format !== "corpus-s3d";
+  const inThreeD = viewMode === "threeD";
+  const displayChoices: RibbonChoice[] = ([["drilling", "Linije + bušenja"], ["lines", "Linije"], ["solid-lines", "Linije bez nevidljivih"], ["edge-check", "Prikaz kantova"], ["decor", "Dekori"]] as const)
+    .map(([mode, label]) => ({ label, disabled: !project, active: inThreeD && roomDisplayMode === mode, onClick: () => chooseDisplay(mode) }));
+  const ribbonTabs: RibbonTab[] = [
+    { id: "home", label: "Početna", groups: [
+      { label: "Projekat", content: <>
+        <RibbonButton label="Novi" icon="new" onClick={newDesktopProject} />
+        <RibbonButton label="Učitaj" icon="open" onClick={() => inputRef.current?.click()} />
+        <RibbonButton label="Snimi" icon="save" disabled={!project} onClick={exportWorkingCopy} />
+        <RibbonDropdown label="Štampa" icon="print" disabled={!project || !inThreeD} choices={[{ label: "Štampaj prikaz", onClick: () => { captureRoomRef.current = setPrintImage; } }, { label: "Spremi sliku", onClick: saveViewImage }]} />
+        <RibbonDropdown label="Još" icon="open" choices={[
+          { label: "Nedavni projekti…", onClick: () => { activateWindow("start"); setStartupOpen(true); } },
+          { label: "Sačuvaj radnu kopiju…", disabled: !project?.dirty, onClick: exportWorkingCopy },
+          { label: "Učitaj radnu kopiju…", disabled: !project, onClick: () => workingCopyInputRef.current?.click() },
+          { label: "Vrati originalni projekat", disabled: !project?.dirty, onClick: resetWorkingCopy },
+          { label: "Zatvori projekat", disabled: !project, onClick: () => { if (confirmReplace()) { setProject(null); setSelected(null); setDocumentWindows([]); setLibraryOpen(false); setGolaCutsOpen(false); setScriptLibraryOpen(false); setMacroLibraryOpen(false); setStartupOpen(true); } } },
+        ]} />
+      </> },
+      { label: "Uređivanje", content: <>
+        <RibbonButton label="Poništi" icon="undo" disabled={!project?.history.length} onClick={undoWorkingCopy} />
+        <RibbonButton label="Ponovi" icon="redo" disabled={!project?.future.length} onClick={redoWorkingCopy} />
+        <RibbonButton label="Dupliraj" icon="duplicate" disabled={!canUseElement || !canInsertElement} onClick={() => duplicateImportedElement()} />
+      </> },
+      { label: "Element", content: <>
+        <RibbonButton label="Učitaj E3D" icon="library" disabled={!canInsertElement} onClick={() => e3dImportInputRef.current?.click()} />
+        <RibbonButton label="Spremi element" icon="saveElement" disabled={!canUseElement} onClick={openSaveElement} />
+      </> },
+      { label: "Izbor", content: <>
+        <RibbonButton label="Označi sve" icon="library" disabled={!project} onClick={() => { if (project) selectRootGroup(project.inspection.elements.map((_, index) => index)); }} />
+        <RibbonButton label="Poništi izbor" icon="cancel" disabled={!groupSelection.length} onClick={() => setGroupSelection([])} />
+        <RibbonButton label="Svojstva" icon="settings" disabled={!selected} onClick={() => setRightTab("properties")} />
+      </> },
+      { label: "Prikaz", content: <>
+        <RibbonDropdown label="Način prikaza" icon="drilling" choices={displayChoices} disabled={!project} />
+        <RibbonButton label="3D" icon="room" disabled={!project} active={inThreeD} onClick={() => setViewMode("threeD")} />
+        <RibbonButton label="Nacrt" icon="drawing" disabled={!project} active={viewMode === "drawing"} onClick={() => setViewMode("drawing")} />
+        <RibbonButton label="Bridovi" icon="bridges" disabled={!project || !inThreeD} active={showRoomBridges} onClick={() => setShowRoomBridges((value) => !value)} />
+        <RibbonDropdown label="Desni panel" icon="editor" choices={[{ label: "Elementi", onClick: () => setRightTab("elements") }, { label: "Soba", onClick: () => setRightTab("room") }, { label: "Svojstva", onClick: () => setRightTab("properties") }]} />
+      </> },
+    ] },
+    { id: "insert", label: "Umetanje", groups: [
+      { label: "Biblioteka", content: <>
+        <RibbonButton label="Element" icon="library" disabled={notS3d} onClick={openLibrary} />
+        <RibbonButton label="Okovi" icon="settings" disabled={notS3d} onClick={openHardwareLibrary} />
+        <RibbonButton label="Novi korpus" icon="editor" disabled={notS3d} onClick={() => { activateWindow("cabinet-generator"); setGeneratorOpen(true); }} />
+        <RibbonButton label="Novi element" icon="new" disabled={notS3d} onClick={() => { activateWindow("element-creator"); setElementCreatorOpen(true); }} />
+        <RibbonButton label="Dodaj E3D" icon="open" disabled={notS3d} onClick={() => e3dImportInputRef.current?.click()} />
+      </> },
+      { label: "Kuhinja", content: <>
+        <RibbonDropdown label="Cokla i ploče" icon="bridges" disabled={notS3d} choices={[{ label: "Cokla", onClick: () => insertKitchenParts("plinth") }, { label: "Radna ploča", onClick: () => insertKitchenParts("worktop") }, { label: "Stropna ploha", onClick: () => insertKitchenParts("ceiling") }]} />
+        <RibbonButton label="Ručkica" icon="duplicate" disabled={notS3d || !selected} onClick={openHandle} />
+        <RibbonButton label="Gola usjeci" icon="kant" disabled={!selected} onClick={openGolaCuts} />
+      </> },
+      { label: "Automatizacija", content: <>
+        <RibbonButton label="Makroi" icon="editor" disabled={!project} onClick={() => { activateWindow("macros"); macroFiles.length ? setMacroLibraryOpen(true) : macroLibraryInputRef.current?.click(); }} />
+        <RibbonButton label="Skripte" icon="cutlist" disabled={!localCorpus?.scripts?.length} onClick={() => { activateWindow("scripts"); setScriptLibraryOpen(true); }} />
+      </> },
+    ] },
+    { id: "production", label: "Proizvodnja", groups: [
+      { label: "Liste i materijal", content: <>
+        <RibbonButton label="Krojna lista" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} />
+        <RibbonButton label="Utrošak" icon="cutlist" disabled={!project} onClick={() => { activateWindow("used-material"); setUsedMaterialOpen(true); }} />
+        <RibbonButton label="Izvještaji" icon="print" disabled={!project} onClick={() => { activateWindow("reports"); setReportOpen(true); }} />
+        <RibbonButton label="Teksture" icon="open" disabled={!project} onClick={() => materialLibraryInputRef.current?.click()} />
+        <RibbonButton label="Zamjena materijala" icon="decor" disabled={!project || !materialLibrary || documentWindows.includes("data")} onClick={() => { activateWindow("material-replacement"); setMaterialReplacementOpen(true); }} />
+      </> },
+      { label: "Izvoz", content: <>
+        <RibbonButton label="Corpus S3D" icon="save" disabled={!project?.dirty} onClick={exportS3dCopy} />
+        <RibbonDropdown label="CSV" icon="cutlist" disabled={!project} choices={[{ label: "Krojna lista", onClick: () => exportCutList() }, { label: "Po pločama (profil Ivertim)", onClick: () => exportBoardCsv(true) }, { label: "Po pločama, ne zbrajaj iste", onClick: () => exportBoardCsv(false) }, { label: "Potrošni materijal", onClick: () => exportConsumables() }]} />
+        <RibbonButton label="MPR" icon="drilling" disabled={!selected} onClick={exportCutoutMpr} />
+      </> },
+    ] },
+    { id: "help", label: "Prozori i pomoć", groups: [
+      { label: "Prozori", content: <>
+        <RibbonButton label="Početni prozor" icon="new" onClick={() => { activateWindow("start"); setStartupOpen(true); }} />
+        <RibbonButton label="Biblioteka" icon="library" disabled={notS3d} onClick={openLibrary} />
+        <RibbonButton label="Proizvodne liste" icon="cutlist" disabled={!project} onClick={() => openDocument("cutlist")} />
+        <RibbonButton label="Postavke sobe" icon="settings" disabled={!project} onClick={() => openDocument("room")} />
+      </> },
+      { label: "Pomoć", content: <>
+        <RibbonButton label="Osvježi (F5)" icon="redo" onClick={() => { void refreshApplication(); }} />
+        <RibbonButton label="Demo projekat" icon="room" onClick={() => { if (confirmReplace()) loadProject("IVERTIM-DEMO.S3D", new Blob([DEMO_S3D]).size, DEMO_S3D, parseCorpusS3d(DEMO_S3D)); }} />
+        <RibbonButton label="Kontrole i prečice" icon="editor" onClick={() => { activateWindow("help"); setHelpOpen(true); }} />
+      </> },
+    ] },
+  ];
+  const chrome = <DesktopHeader>
+    <DesktopRibbon tabs={ribbonTabs} />
   </DesktopHeader>;
   const startup = startupOpen && <StartProjectWindow recent={recentProjects} onNew={newDesktopProject} onOpen={() => inputRef.current?.click()} onRecent={openRecentProject} onClose={() => setStartupOpen(false)}>
 

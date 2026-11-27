@@ -14,6 +14,7 @@ import { corpusBoardDimensions, corpusHolePosition, corpusRoomTotalHeight, evalu
 import { resolveCorpusMainFaceHoles } from "../lib/corpus-hole-geometry";
 import { corpusElementBoardBounds } from "../lib/corpus-board-bounds";
 import { corpusGroupBounds, corpusElementAllowsModeling } from "../lib/corpus-group";
+import { CANVAS_BACKGROUNDS, readCanvasBackground, setCanvasBackground, setTheme, useCanvasBackground, useTheme } from "./ui-settings";
 
 export type RoomDisplayMode = "drilling" | "lines" | "solid-lines" | "edge-check" | "decor";
 
@@ -53,6 +54,9 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
   const containerRef = useRef<HTMLDivElement>(null);
   const renderResources = useRef<{ renderer: THREE.WebGLRenderer; textures: ReturnType<typeof createMaterialTextures> } | null>(null);
   const appliedViewRevisionRef = useRef(-1);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const canvasBackground = useCanvasBackground();
+  const theme = useTheme();
   const lastElementClickRef = useRef<{ element: CorpusS3dElement; time: number } | null>(null);
   const [showEnvelopes, setShowEnvelopes] = useState(false);
   const [showHoles, setShowHoles] = useState(true);
@@ -140,8 +144,10 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
     const { renderer, textures: { textureForBoard } } = resources;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4f6f1);
-    scene.fog = new THREE.Fog(0xf4f6f1, 9000, 18000);
+    const initialBackground = new THREE.Color(readCanvasBackground());
+    scene.background = initialBackground;
+    scene.fog = new THREE.Fog(initialBackground, 9000, 18000);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(38, 1, 5, 40000);
 
@@ -629,8 +635,16 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
       visualRefs.current.clear();
       if (groupEnvelopeRef.current === groupEnvelope) groupEnvelopeRef.current = null;
       if (orientationAxesRef.current === orientationAxes) orientationAxesRef.current = null;
+      if (sceneRef.current === scene) sceneRef.current = null;
     };
   }, [cameraScope, elements, room, materialTextures, captureRef, displayMode, wallColor, floorTextureUrl, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.background = new THREE.Color(canvasBackground);
+    if (scene.fog) scene.fog.color.set(canvasBackground);
+  }, [canvasBackground, cameraScope, elements, room, materialTextures, displayMode, wallColor, floorTextureUrl, showEnvelopes, showHoles, showProblems, showGrid, showBoardEdges, frontVisibility, snapStep, viewRevision, cameraView]);
 
   useEffect(() => {
     const envelope = groupEnvelopeRef.current;
@@ -658,11 +672,16 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
           <span>Klik bira · povlačenje izabranog pomjera element · povlačenje mimo izbora okreće kameru · Alt za slobodan prolaz · dvoklik uređuje</span>
         </div>
         <div className="three-controls">
-          <button aria-pressed={cameraView === "front"} onClick={() => chooseView("front")}>Prednji</button>
-          <button aria-pressed={cameraView === "side"} onClick={() => chooseView("side")}>Bočni</button>
-          <button aria-pressed={cameraView === "top"} onClick={() => chooseView("top")}>Gornji</button>
-          <button aria-pressed={cameraView === "selection"} disabled={!selected && groupElements.length < 2} onClick={() => chooseView("selection")}>Fokus na izbor</button>
-          <button onClick={() => chooseView("home")}>Početni</button>
+          <details className="canvas-options">
+            <summary>Pogled: {({ home: "Početni", front: "Prednji", side: "Bočni", top: "Gornji", selection: "Fokus" } as Record<string, string>)[cameraView] ?? "Početni"}</summary>
+            <div onClick={(event) => { const details = (event.currentTarget.parentElement as HTMLDetailsElement); if ((event.target as HTMLElement).closest("button:not(:disabled)")) details.open = false; }}>
+              <button aria-pressed={cameraView === "home"} onClick={() => chooseView("home")}>Početni</button>
+              <button aria-pressed={cameraView === "front"} onClick={() => chooseView("front")}>Prednji</button>
+              <button aria-pressed={cameraView === "side"} onClick={() => chooseView("side")}>Bočni</button>
+              <button aria-pressed={cameraView === "top"} onClick={() => chooseView("top")}>Gornji</button>
+              <button aria-pressed={cameraView === "selection"} disabled={!selected && groupElements.length < 2} onClick={() => chooseView("selection")}>Fokus na izbor</button>
+            </div>
+          </details>
           <button onClick={() => setFrontVisibility((value) => value === "shown" ? "hidden" : "shown")}>
             {frontVisibility === "shown" ? "Sakrij fronte" : "Pokaži fronte"}
           </button>
@@ -675,6 +694,17 @@ export function Room3DView({ displayMode, wallColor, floorTextureUrl, showBoardE
               <button aria-pressed={showGrid} onClick={() => setShowGrid((value) => !value)}>Mreža</button>
               <button disabled={displayMode === "lines" || displayMode === "solid-lines" || displayMode === "drilling"} aria-pressed={displayMode === "drilling" || (displayMode !== "lines" && displayMode !== "solid-lines" && showHoles)} onClick={() => setShowHoles((value) => !value)}>Bušenja</button>
               <button aria-pressed={showProblems} disabled={!outsideRoomElements.length && !overlappingElements.length} onClick={() => setShowProblems((value) => !value)}>Problemi ({new Set([...outsideRoomElements, ...overlappingElements]).size})</button>
+            </div>
+          </details>
+          <details className="canvas-options">
+            <summary>Izgled</summary>
+            <div className="appearance-menu">
+              <span className="menu-caption">Tema aplikacije</span>
+              <button aria-pressed={theme === "light"} onClick={() => setTheme("light")}>Svijetla</button>
+              <button aria-pressed={theme === "dark"} onClick={() => setTheme("dark")}>Tamna</button>
+              <span className="menu-caption">Pozadina platna</span>
+              {CANVAS_BACKGROUNDS.map((item) => <button key={item.color} aria-pressed={canvasBackground.toLowerCase() === item.color} onClick={() => setCanvasBackground(item.color)}><i className="swatch" style={{ background: item.color }} />{item.label}</button>)}
+              <label className="menu-color">Vlastita boja<input type="color" value={canvasBackground} onChange={(event) => setCanvasBackground(event.target.value)} /></label>
             </div>
           </details>
         </div>
